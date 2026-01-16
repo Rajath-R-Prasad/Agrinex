@@ -1,35 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import api from '../lib/api';
 import { useAuth } from '../contexts/AuthContext';
-import { db } from '../lib/firebase';
-import { doc, setDoc } from 'firebase/firestore';
 
 /**
- * Micro Weather Forecasting Page
+ * Micro Weather Forecasting Page - Mock Data Only
  * 
- * Backend Integration Notes:
- * - Fetch logged-in user's farm location from auth context/API
- * - Replace mock data below with backend API calls
- * - Use useEffect to fetch data when forecastDays changes
- * - Map API response to the data structures defined below
- * - Add loading states and error handling
- * 
- * Expected Backend Endpoints:
- * - Get user farm: GET /api/user/farm (returns farm location, coordinates)
- * - Current weather: GET /api/weather/current?farmId={id}
- * - Forecast: GET /api/weather/forecast?farmId={id}&days={7|14}
- * - Gemini Insights: POST /api/weather/gemini-insights?farmId={id}&forecastDays={days}
- * 
- * Gemini API Integration:
- * - Backend should call Gemini API with weather data, soil data, crop data
- * - Gemini generates: cultivation action plan, risk alerts, best practices
- * - ML models provide: irrigation timing schedule, yield projections
- * - Combined response includes both ML predictions and Gemini AI analysis
- * 
- * Real-Time Updates:
- * - Use WebSocket or polling (every 5-10 minutes) for live weather updates
- * - ML models + Gemini API will recalculate insights automatically when weather data changes
- * - Example: useEffect(() => { fetchGeminiInsights(); const interval = setInterval(fetchGeminiInsights, 300000); return () => clearInterval(interval); }, [forecastDays, userFarm.id]);
+ * This component displays weather forecasting with mock/hardcoded data.
+ * No backend API integration at this time.
  */
 
 const Weather: React.FC = () => {
@@ -43,11 +19,12 @@ const Weather: React.FC = () => {
     name: 'My Farm',
     location: 'Punjab, India',
     coordinates: '30.7333°N, 76.7794°E',
+    area: 100,
   };
   const [currentWeather, setCurrentWeather] = useState<any>({
     location: userFarm.location,
     coordinates: userFarm.coordinates,
-    temperature: 32,
+    temperature: 24,
     feelsLike: 35,
     condition: 'Sunny',
     humidity: 65,
@@ -63,8 +40,8 @@ const Weather: React.FC = () => {
   const [forecastData, setForecastData] = useState<any[]>(
     Array.from({ length: forecastDays }, (_, i) => ({
       date: new Date(Date.now() + i * 24 * 60 * 60 * 1000),
-      high: 32 + Math.floor(Math.random() * 5),
-      low: 22 + Math.floor(Math.random() * 5),
+      high: 24 + Math.floor(Math.random() * 5),
+      low: 16 + Math.floor(Math.random() * 5),
       condition: ['Sunny', 'Partly Cloudy', 'Cloudy', 'Rainy'][Math.floor(Math.random() * 4)],
       rainChance: Math.floor(Math.random() * 100),
       rainAmount: Math.floor(Math.random() * 25),
@@ -83,262 +60,8 @@ const Weather: React.FC = () => {
   });
   const [gemini, setGemini] = useState<any | null>(null);
   const zoneLocks = getSelectedFarmZoneLocks();
-  const [geoCoords, setGeoCoords] = useState<{ lat: number; lon: number } | null>(null);
-  const [mlCropRecs, setMlCropRecs] = useState<Array<{ crop: string; suitability: number; reason: string }>>([]);
-  const [mlIrrigation, setMlIrrigation] = useState<any | null>(null);
-  const [zonesForFarm, setZonesForFarm] = useState<Array<{ id: string; area_acres: number; soil_type: string; moisture: number; crop_suggestion: string; suitability: number }>>([]);
 
-  useEffect(() => {
-    let cancelled = false;
-    const deriveFarmCoords = async () => {
-      try {
-        let lat: number | null = null;
-        let lon: number | null = null;
-        if (selectedFarm?.coordinates) {
-          const cleaned = selectedFarm.coordinates.replace(/[^\d\.,\- ]/g, '');
-          const parts = cleaned.split(',').map(s => s.trim());
-          if (parts.length >= 2) {
-            const plat = Number(parts[0]);
-            const plon = Number(parts[1]);
-            if (!Number.isNaN(plat) && !Number.isNaN(plon)) {
-              lat = plat;
-              lon = plon;
-            }
-          }
-        }
-        if (lat === null || lon === null) {
-          const geoRes = await api.get(`/api/geocode`, { params: { q: selectedFarm?.location || '' } });
-          const loc = (geoRes.data?.results && geoRes.data.results[0]) || null;
-          lat = loc?.lat ?? 30.7333;
-          lon = loc?.lon ?? 76.7794;
-        }
-        if (cancelled) return;
-        setGeoCoords({ lat: Number(lat.toFixed(4)), lon: Number(lon.toFixed(4)) });
-      } catch {
-        if (cancelled) return;
-        setGeoCoords({ lat: 30.7333, lon: 76.7794 });
-      }
-    };
-    deriveFarmCoords();
-    return () => { cancelled = true; };
-  }, [selectedFarm?.id]);
-
-  useEffect(() => {
-    if (!geoCoords) return;
-    let cancelled = false;
-    const fetchCurrent = async () => {
-      try {
-        const curRes = await api.get(`/api/weather/current`, { params: { lat: geoCoords.lat, lon: geoCoords.lon } });
-        const curJson = curRes.data;
-        if (cancelled) return;
-        setCurrentWeather({
-          location: curJson.location,
-          coordinates: `${geoCoords.lat}, ${geoCoords.lon}`,
-          temperature: curJson.temperature,
-          feelsLike: curJson.feelsLike,
-          condition: curJson.condition,
-          humidity: curJson.humidity,
-          windSpeed: curJson.windSpeed,
-          windDirection: curJson.windDirection,
-          pressure: curJson.pressure,
-          visibility: curJson.visibility,
-          uvIndex: curJson.uvIndex,
-          sunrise: curJson.sunrise,
-          sunset: curJson.sunset,
-          lastUpdated: curJson.lastUpdated,
-        });
-        try {
-          const geoRes = await api.get(`/api/geocode`, { params: { q: curJson.location } });
-          const loc = (geoRes.data?.results && geoRes.data.results[0]) || null;
-          const stateName = loc?.region || (selectedFarm?.location?.split(',')[0]?.trim() ?? 'Karnataka');
-          const districtName = loc?.name || (selectedFarm?.location?.split(',')[0]?.trim() ?? 'Bengaluru');
-          const soilType = selectedFarm?.soilType || 'Loam';
-          const soilQuality = (selectedFarm?.moisture ?? 45) < 35 ? 'Poor' : (selectedFarm?.moisture ?? 45) > 65 ? 'Rich' : 'Medium';
-          const soilFeel = (selectedFarm?.moisture ?? 45) < 35 ? 'dry and crumbly' : (selectedFarm?.moisture ?? 45) > 65 ? 'wet and muddy' : 'slightly damp';
-          const applicationRate = 5.0;
-          const cropRes = await api.post('/api/v1/crop/recommend', {
-            soil_type: soilType,
-            soil_quality: soilQuality,
-            state_name: stateName,
-            district_name: districtName,
-          });
-          const irrigRes = await api.post('/api/v1/irrigation/recommend', {
-            soil_feel: soilFeel,
-            application_rate: applicationRate,
-            state_name: stateName,
-            district_name: districtName,
-          });
-          setMlCropRecs(cropRes.data?.recommendations || []);
-          setMlIrrigation(irrigRes.data || null);
-        } catch {}
-      } catch {}
-    };
-    fetchCurrent();
-    const interval = setInterval(fetchCurrent, 60000);
-    return () => {
-      cancelled = true;
-      clearInterval(interval);
-    };
-  }, [geoCoords]);
-
-  useEffect(() => {
-    let cancelled = false;
-    const fetchAll = async () => {
-      if (!selectedFarm) return;
-      setLoading(true);
-      try {
-        let lat: number | null = null;
-        let lon: number | null = null;
-        if (selectedFarm.coordinates) {
-          const cleaned = selectedFarm.coordinates.replace(/[^\d\.,\- ]/g, '');
-          const parts = cleaned.split(',').map(s => s.trim());
-          if (parts.length >= 2) {
-            const plat = Number(parts[0]);
-            const plon = Number(parts[1]);
-            if (!Number.isNaN(plat) && !Number.isNaN(plon)) {
-              lat = plat;
-              lon = plon;
-            }
-          }
-        }
-        if (lat === null || lon === null) {
-          const geoRes = await api.get(`/api/geocode`, { params: { q: selectedFarm.location } });
-          const geoJson = geoRes.data;
-          const loc = (geoJson.results && geoJson.results[0]) || null;
-          lat = loc?.lat ?? 30.7333;
-          lon = loc?.lon ?? 76.7794;
-        }
-        const curRes = await api.get(`/api/weather/current`, { params: { lat, lon } });
-        const curJson = curRes.data;
-        const fcRes = await api.get(`/api/weather/forecast`, { params: { lat, lon, days: forecastDays } });
-        const fcJson = fcRes.data;
-        const anRes = await api.get(`/api/weather/analytics`, { params: { lat, lon, days: forecastDays } });
-        const anJson = anRes.data;
-        if (cancelled) return;
-        setCurrentWeather({
-          location: curJson.location,
-          coordinates: `${lat}, ${lon}`,
-          temperature: curJson.temperature,
-          feelsLike: curJson.feelsLike,
-          condition: curJson.condition,
-          humidity: curJson.humidity,
-          windSpeed: curJson.windSpeed,
-          windDirection: curJson.windDirection,
-          pressure: curJson.pressure,
-          visibility: curJson.visibility,
-          uvIndex: curJson.uvIndex,
-          sunrise: curJson.sunrise,
-          sunset: curJson.sunset,
-          lastUpdated: curJson.lastUpdated,
-        });
-        const mappedForecast = (fcJson.days || []).map((d: any) => ({
-          date: new Date(d.date),
-          high: d.high,
-          low: d.low,
-          condition: d.condition,
-          rainChance: d.rainChance,
-          rainAmount: d.rainAmount,
-          humidity: d.humidity,
-          windSpeed: d.windSpeed,
-        }));
-        setForecastData(mappedForecast);
-        setAnalytics({
-          avgTemp: anJson.avgTemp ?? 0,
-          maxTemp: anJson.maxTemp ?? 0,
-          minTemp: anJson.minTemp ?? 0,
-          totalRainfall: anJson.totalRainfall ?? 0,
-          avgHumidity: anJson.avgHumidity ?? 0,
-          avgWindSpeed: anJson.avgWindSpeed ?? 0,
-          extremeDays: anJson.extremeDays ?? 0,
-        });
-        try {
-          const gRes = await api.post(`/api/weather/gemini-insights`, { lat, lon, days: forecastDays });
-          setGemini(gRes.data);
-        } catch {
-          setGemini({ summary: { text: 'AI insights unavailable' } });
-        }
-        const uid = user?.id || 'anonymous';
-        const fid = selectedFarm.id;
-        if (db) {
-          await setDoc(
-            doc(db, 'weather', `${uid}_${fid}`),
-            {
-              location: curJson.location,
-              lat,
-              lon,
-              current: curJson,
-              forecast: fcJson,
-              analytics: anJson,
-              gemini,
-              updatedAt: new Date().toISOString(),
-            },
-            { merge: true }
-          );
-        }
-      } catch (e) {
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetchAll();
-    const interval = setInterval(fetchAll, 300000);
-    return () => {
-      cancelled = true;
-      clearInterval(interval);
-    };
-  }, [forecastDays, selectedFarm?.id]);
-  useEffect(() => {
-    let cancelled = false;
-    const fetchZonesForWeather = async () => {
-      if (!selectedFarm || !geoCoords) return;
-      try {
-        const body = {
-          lat: geoCoords.lat,
-          lon: geoCoords.lon,
-          area_acres: selectedFarm.area ?? 5,
-          soil_type: selectedFarm.soilType ?? 'loamy',
-          avg_moisture: ((selectedFarm.moisture ?? 50) / 100),
-        };
-        const res = await api.post('/api/network/zones', body);
-        if (cancelled) return;
-        setZonesForFarm(res.data?.zones || []);
-      } catch {}
-    };
-    fetchZonesForWeather();
-    return () => { cancelled = true; };
-  }, [selectedFarm?.id, geoCoords?.lat, geoCoords?.lon]);
-  // useEffect(() => {
-  //   if (!selectedFarm) return;
-  //   
-  //   const fetchMLInsights = async () => {
-  //     setLoading(true);
-  //     try {
-  //       // Backend will call Gemini API and combine with ML model predictions
-  //       const response = await fetch(`/api/weather/gemini-insights?farmId=${selectedFarm.id}&forecastDays=${forecastDays}`, {
-  //         method: 'POST',
-  //         headers: { 'Content-Type': 'application/json' },
-  //         body: JSON.stringify({
-  //           forecastData,
-  //           currentWeather,
-  //           soilData: {}, // Add soil data from sensors
-  //           cropData: {}, // Add current crop information
-  //         })
-  //       });
-  //       const data = await response.json();
-  //       // Response includes: irrigationTiming, cultivationRecommendations, riskAlerts, bestPractices
-  //       setMLInsights(data);
-  //     } catch (error) {
-  //       console.error('Failed to fetch Gemini insights:', error);
-  //     } finally {
-  //       setLoading(false);
-  //     }
-  //   };
-  //   
-  //   fetchMLInsights();
-  //   // Poll every 5 minutes for real-time updates
-  //   const interval = setInterval(fetchMLInsights, 300000);
-  //   return () => clearInterval(interval);
-  // }, [forecastDays, selectedFarm?.id, forecastData, currentWeather]);
+  // No useEffect hooks - using mock data only
 
   
 
@@ -631,28 +354,13 @@ const Weather: React.FC = () => {
           <h1 style={{ fontSize: 'var(--h1)', marginBottom: 'var(--space-md)', color: 'var(--text-primary)' }}>
             Hyper-Local Weather Intelligence
           </h1>
-          <div className="card-apple" style={{ marginTop: 'var(--space-md)' }}>
+          <div className="card-apple" style={{ marginTop: 'var(--space-md)', background: 'rgba(16, 185, 129, 0.08)' }}>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 'var(--space-md)', alignItems: 'start' }}>
               <div>
-                <div className="pill" style={{ marginBottom: 'var(--space-sm)' }}>Irrigation Decision</div>
-                {mlIrrigation ? (
-                  <div style={{ padding: 'var(--space-sm)', border: '1px solid var(--border-color)', borderRadius: 'var(--space-xs)', background: 'var(--bg-tertiary)' }}>
-                    <div style={{ fontSize: 'var(--body)', fontWeight: 700, color: 'var(--text-primary)', marginBottom: 6 }}>
-                      {mlIrrigation.irrigate ? 'Irrigate Now' : 'Wait'}
-                    </div>
-                    <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
-                      {mlIrrigation.reason_weather}
-                    </div>
-                    <div style={{ display: 'flex', gap: 'var(--space-md)', marginTop: '8px' }}>
-                      <div style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>Water</div>
-                      <div style={{ fontSize: 'var(--body)', color: 'var(--text-primary)', fontWeight: 600 }}>{mlIrrigation.water_mm} mm</div>
-                      <div style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>Duration</div>
-                      <div style={{ fontSize: 'var(--body)', color: 'var(--text-primary)', fontWeight: 600 }}>{mlIrrigation.duration_hours} h</div>
-                    </div>
-                  </div>
-                ) : (
-                  <div style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>Loading ML decision…</div>
-                )}
+                <div className="pill" style={{ marginBottom: 'var(--space-sm)', background: 'rgba(16, 185, 129, 0.15)', borderColor: 'var(--green-primary)', color: 'var(--green-light)' }}>📊 Mock Weather Data</div>
+                <div style={{ fontSize: 'var(--body)', color: 'var(--text-secondary)' }}>
+                  This page displays sample weather data. API integration is not enabled.
+                </div>
               </div>
             </div>
           </div>
@@ -778,64 +486,7 @@ const Weather: React.FC = () => {
           </div>
         </div>
 
-        {/* Zone Irrigation Plan */}
-        {zonesForFarm.length > 0 && mlIrrigation && (
-          <div className="card-apple" style={{ marginBottom: 'var(--space-lg)' }}>
-            <div className="pill" style={{ marginBottom: 'var(--space-sm)' }}>Zone Irrigation Plan</div>
-            <div style={{ fontSize: 'var(--body)', color: 'var(--text-secondary)', marginBottom: 'var(--space-sm)' }}>
-              Based on {currentWeather.location} conditions and farm zones.
-            </div>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 'var(--space-md)' }}>
-              {(() => {
-                const totalArea = zonesForFarm.reduce((s, z) => s + (z.area_acres || 0), 0) || 1;
-                const targetMoisture = 60;
-                return zonesForFarm.map((z, i) => {
-                  const moisturePct = Math.round((z.moisture || 0) * 100);
-                  const areaFactor = (z.area_acres || 0) / totalArea;
-                  const deficitFactor = Math.min(1.4, Math.max(0.6, (100 - moisturePct) / 100 * 1.2));
-                  const zoneWater = Math.round(mlIrrigation.water_mm * areaFactor * deficitFactor);
-                  const zoneDuration = Math.max(0.2, Number((mlIrrigation.duration_hours * areaFactor * deficitFactor).toFixed(2)));
-                  const method = zoneWater <= 5 ? 'Drip' : zoneWater <= 12 ? 'Sprinkler' : 'Flood';
-                  const optimalTime = '6:00 AM - 7:00 AM';
-                  return (
-                    <div key={z.id || i} style={{ padding: 'var(--space-md)', border: '1px solid var(--border-color)', borderRadius: 'var(--space-xs)', background: 'var(--bg-tertiary)' }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-sm)' }}>
-                        <div style={{ fontSize: 'var(--h3)', fontWeight: 600, color: 'var(--text-primary)' }}>Zone {i + 1}</div>
-                        <div style={{ padding: '4px 10px', borderRadius: 6, background: 'rgba(16,185,129,0.12)', color: 'var(--green-light)', fontSize: 11, fontWeight: 700 }}>
-                          {moisturePct}% moisture
-                        </div>
-                      </div>
-                      <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 'var(--space-sm)' }}>
-                        Soil: {z.soil_type} · Area: {z.area_acres} acres
-                      </div>
-                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 'var(--space-sm)', marginBottom: 'var(--space-sm)' }}>
-                        <div>
-                          <div style={{ fontSize: '11px', color: 'var(--text-tertiary)' }}>Water</div>
-                          <div style={{ fontSize: 'var(--body)', fontWeight: 600, color: 'var(--text-primary)' }}>{zoneWater} mm</div>
-                        </div>
-                        <div>
-                          <div style={{ fontSize: '11px', color: 'var(--text-tertiary)' }}>Duration</div>
-                          <div style={{ fontSize: 'var(--body)', fontWeight: 600, color: 'var(--text-primary)' }}>{zoneDuration} h</div>
-                        </div>
-                        <div>
-                          <div style={{ fontSize: '11px', color: 'var(--text-tertiary)' }}>Method</div>
-                          <div style={{ fontSize: 'var(--body)', fontWeight: 600, color: 'var(--text-primary)' }}>{method}</div>
-                        </div>
-                        <div>
-                          <div style={{ fontSize: '11px', color: 'var(--text-tertiary)' }}>Optimal Time</div>
-                          <div style={{ fontSize: 'var(--body)', fontWeight: 600, color: 'var(--text-primary)' }}>{optimalTime}</div>
-                        </div>
-                      </div>
-                      <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
-                        Use {method.toLowerCase()} irrigation. Target {targetMoisture}% soil moisture. Adjust flow to reach {zoneWater} mm evenly across {z.area_acres} acres.
-                      </div>
-                    </div>
-                  );
-                });
-              })()}
-            </div>
-          </div>
-        )}
+        {/* Zone Irrigation Plan - Placeholder (no zones from API) */}
 
 
         {/* Micro Weather Forecasting - Multi-Radius Zones */}
