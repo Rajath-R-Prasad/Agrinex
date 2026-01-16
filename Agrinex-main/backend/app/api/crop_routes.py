@@ -2,7 +2,6 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from typing import Dict, Any
 from app.services.crop_service import predict_crop  # your existing service
-from app.services.appwrite_service import appwrite_service
 
 router = APIRouter(prefix="/crop", tags=["crop"])
 
@@ -30,19 +29,6 @@ async def crop_predict(request: CropRequest) -> Dict[str, Any]:
             "district": request.district_name.lower(),
             "farm_id": request.farm_id
         })
-        
-        # Log to Appwrite
-        if result["success"]:
-            log_data = {
-                **{k: v for k, v in result.items() if k not in ["success", "error"]},
-                "crop_name": request.crop_name,
-                "soil_type": request.soil_type
-            }
-            appwrite_service.log_crop_prediction(
-                user_id="temp_user_123",  # from auth later
-                farm_id=request.farm_id or "no_farm",
-                pred_data=log_data
-            )
         
         return result
         
