@@ -1,4 +1,4 @@
-const API_BASE_URL = import.meta.env.VITE_API_URL || '/api';
+const rawBase = (import.meta.env.VITE_API_URL || '').replace(/\/+$/, '');
 
 interface RequestOptions {
   headers?: Record<string, string>;
@@ -7,7 +7,22 @@ interface RequestOptions {
 }
 
 async function request(method: string, endpoint: string, options?: RequestOptions) {
-  let url = `${API_BASE_URL}${endpoint}`;
+  // Normalize endpoint
+  const cleanEndpoint = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
+  
+  let url = '';
+  if (rawBase) {
+    if (rawBase.endsWith('/api') && cleanEndpoint.startsWith('/api/')) {
+      url = `${rawBase}${cleanEndpoint.slice(4)}`;
+    } else {
+      url = `${rawBase}${cleanEndpoint}`;
+    }
+  } else {
+    url = cleanEndpoint;
+  }
+
+  // Final safety check: remove accidental duplicate /api/api
+  url = url.replace('/api/api/', '/api/');
   
   // Add query params if provided
   if (options?.params) {

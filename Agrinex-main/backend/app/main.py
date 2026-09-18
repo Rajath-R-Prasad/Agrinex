@@ -15,11 +15,11 @@ from pydantic import BaseModel, Field
 try:
     from app.services.crop_service import CropService
     from app.services.irrigation_service import recommend_irrigation_with_weather, recommend_irrigation
-    from app.services.weather_service import get_hyperlocal_weather, get_openmeteo_weather, map_location_to_coords
+    from app.services.weather_service import get_hyperlocal_weather, get_openmeteo_weather, map_location_to_coords, reverse_lookup_place
 except ImportError:
     from services.crop_service import CropService
     from services.irrigation_service import recommend_irrigation_with_weather, recommend_irrigation
-    from services.weather_service import get_hyperlocal_weather, get_openmeteo_weather, map_location_to_coords
+    from services.weather_service import get_hyperlocal_weather, get_openmeteo_weather, map_location_to_coords, reverse_lookup_place
 
 app = FastAPI(title="Agrinex Agriculture Intelligence API", version="2.0.0")
 
@@ -31,6 +31,12 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+@app.middleware("http")
+async def fix_duplicate_api_prefix_middleware(request, call_next):
+    if request.scope.get("path", "").startswith("/api/api/"):
+        request.scope["path"] = request.scope["path"].replace("/api/api/", "/api/", 1)
+    return await call_next(request)
 
 WEATHER_API_KEY = "d9b7930f865ff4b8e81345c3f89e0295"
 WEATHER_BASE = "https://api.weatherapi.com/v1"
@@ -162,56 +168,162 @@ async def get_profile(user_id: str):
 # ---------------- WEATHER ENDPOINTS ----------------------
 # ---------------------------------------------------------
 
+# Canonical Indian District & Major Cities Directory
+INDIAN_CANONICAL_PLACES = {
+    "mysore": ("Karnataka", "Mysuru (Mysore)", 12.2958, 76.6394),
+    "mysuru": ("Karnataka", "Mysuru", 12.2958, 76.6394),
+    "bangalore": ("Karnataka", "Bengaluru (Bangalore)", 12.9716, 77.5946),
+    "bengaluru": ("Karnataka", "Bengaluru", 12.9716, 77.5946),
+    "bombay": ("Maharashtra", "Mumbai", 19.0760, 72.8777),
+    "mumbai": ("Maharashtra", "Mumbai", 19.0760, 72.8777),
+    "pune": ("Maharashtra", "Pune", 18.5204, 73.8567),
+    "poona": ("Maharashtra", "Pune", 18.5204, 73.8567),
+    "delhi": ("Delhi", "Delhi NCR", 28.7041, 77.1025),
+    "new delhi": ("Delhi", "New Delhi", 28.6139, 77.2090),
+    "jaipur": ("Rajasthan", "Jaipur", 26.9124, 75.7873),
+    "mandya": ("Karnataka", "Mandya", 12.5223, 76.8975),
+    "chennai": ("Tamil Nadu", "Chennai (Madras)", 13.0827, 80.2707),
+    "madras": ("Tamil Nadu", "Chennai", 13.0827, 80.2707),
+    "hyderabad": ("Telangana", "Hyderabad", 17.3850, 78.4867),
+    "kolkata": ("West Bengal", "Kolkata (Calcutta)", 22.5726, 88.3639),
+    "calcutta": ("West Bengal", "Kolkata", 22.5726, 88.3639),
+    "ahmedabad": ("Gujarat", "Ahmedabad", 23.0225, 72.5714),
+    "surat": ("Gujarat", "Surat", 21.1702, 72.8311),
+    "ludhiana": ("Punjab", "Ludhiana", 30.9009, 75.8573),
+    "amritsar": ("Punjab", "Amritsar", 31.6340, 74.8723),
+    "chandigarh": ("Punjab", "Chandigarh", 30.7333, 76.7794),
+    "lucknow": ("Uttar Pradesh", "Lucknow", 26.8467, 80.9462),
+    "kanpur": ("Uttar Pradesh", "Kanpur", 26.4499, 80.3319),
+    "varanasi": ("Uttar Pradesh", "Varanasi", 25.3176, 82.9739),
+    "agra": ("Uttar Pradesh", "Agra", 27.1767, 78.0081),
+    "patna": ("Bihar", "Patna", 25.5941, 85.1376),
+    "bhopal": ("Madhya Pradesh", "Bhopal", 23.2599, 77.4126),
+    "indore": ("Madhya Pradesh", "Indore", 22.7196, 75.8577),
+    "nagpur": ("Maharashtra", "Nagpur", 21.1458, 79.0882),
+    "nashik": ("Maharashtra", "Nashik", 19.9975, 73.7898),
+    "aurangabad": ("Maharashtra", "Chhatrapati Sambhajinagar", 19.8762, 75.3433),
+    "kolhapur": ("Maharashtra", "Kolhapur", 16.7050, 74.2433),
+    "dharwad": ("Karnataka", "Dharwad", 15.4589, 75.1342),
+    "hubli": ("Karnataka", "Hubballi (Hubli)", 15.3647, 75.1240),
+    "hubballi": ("Karnataka", "Hubballi", 15.3647, 75.1240),
+    "belgaum": ("Karnataka", "Belagavi (Belgaum)", 15.8497, 74.4977),
+    "belagavi": ("Karnataka", "Belagavi", 15.8497, 74.4977),
+    "kalaburagi": ("Karnataka", "Kalaburagi (Gulbarga)", 17.3265, 76.4304),
+    "gulbarga": ("Karnataka", "Kalaburagi", 17.3265, 76.4304),
+    "shivamogga": ("Karnataka", "Shivamogga (Shimoga)", 13.9299, 75.5681),
+    "shimoga": ("Karnataka", "Shivamogga", 13.9299, 75.5681),
+    "tumakuru": ("Karnataka", "Tumakuru (Tumkur)", 13.2173, 77.1145),
+    "tumkur": ("Karnataka", "Tumakuru", 13.2173, 77.1145),
+    "hassan": ("Karnataka", "Hassan", 13.3352, 75.9103),
+    "chikmagalur": ("Karnataka", "Chikkamagaluru", 13.3181, 75.7708),
+    "udupi": ("Karnataka", "Udupi", 13.3408, 74.7421),
+    "mangalore": ("Karnataka", "Mangaluru (Mangalore)", 12.8658, 74.8440),
+    "mangaluru": ("Karnataka", "Mangaluru", 12.8658, 74.8440),
+}
+
 @app.get("/api/geocode")
 async def geocode(q: str):
     """
-    Convert place name to lat/lon using WeatherAPI search.
+    Convert place name / district / city to lat/lon using canonical Indian dictionary,
+    Open-Meteo Geocoding, and WeatherAPI fallbacks.
     """
-    url = f"{WEATHER_BASE}/search.json?key={WEATHER_API_KEY}&q={q}"
+    query_str = (q or "").strip()
+    if not query_str:
+        return {"results": []}
 
+    results = []
+    seen = set()
+    q_lower = query_str.lower().strip()
+
+    # 1. Immediate Canonical Match for Indian Districts / Cities
+    if q_lower in INDIAN_CANONICAL_PLACES:
+        state_name, place_title, c_lat, c_lon = INDIAN_CANONICAL_PLACES[q_lower]
+        key = (place_title.lower(), state_name.lower())
+        seen.add(key)
+        results.append({
+            "name": place_title,
+            "region": state_name,
+            "country": "India",
+            "lat": round(c_lat, 4),
+            "lon": round(c_lon, 4)
+        })
+
+    # 2. Open-Meteo Geocoding API (Fast, comprehensive global search)
     try:
+        import urllib.parse
+        encoded_q = urllib.parse.quote(query_str)
+        om_geo_url = f"https://geocoding-api.open-meteo.com/v1/search?name={encoded_q}&count=8&language=en&format=json"
         async with httpx.AsyncClient() as client:
-            res = await client.get(url, timeout=5)
-        data = res.json()
+            res = await client.get(om_geo_url, timeout=5)
+        if res.status_code == 200:
+            om_data = res.json()
+            items = om_data.get("results", [])
+            for item in items:
+                name = item.get("name", query_str)
+                region = item.get("admin1") or item.get("country", "India")
+                country = item.get("country", "India")
+                lat = float(item.get("latitude", 0.0))
+                lon = float(item.get("longitude", 0.0))
+                key = (name.lower(), region.lower())
+                
+                # Filter out noisy tollgates or airport sub-names if exact city is already present
+                if key not in seen and lat != 0.0:
+                    seen.add(key)
+                    results.append({
+                        "name": name,
+                        "region": region,
+                        "country": country,
+                        "lat": round(lat, 4),
+                        "lon": round(lon, 4)
+                    })
     except Exception:
-        data = []
+        pass
 
-    if not data:
-        # Fallback to local coordinate mapper
-        parts = [p.strip() for p in q.split(",")]
-        state = parts[1] if len(parts) > 1 else parts[0]
+    # 3. WeatherAPI fallback if results are still empty
+    if not results:
+        try:
+            url = f"{WEATHER_BASE}/search.json?key={WEATHER_API_KEY}&q={urllib.parse.quote(query_str)}"
+            async with httpx.AsyncClient() as client:
+                res = await client.get(url, timeout=5)
+            if res.status_code == 200:
+                data = res.json()
+                if isinstance(data, list):
+                    for item in data:
+                        if isinstance(item, dict) and "lat" in item and "lon" in item:
+                            name = item.get("name", query_str)
+                            region = item.get("region", "")
+                            country = item.get("country", "India")
+                            key = (name.lower(), region.lower())
+                            if key not in seen:
+                                seen.add(key)
+                                results.append({
+                                    "name": name,
+                                    "region": region,
+                                    "country": country,
+                                    "lat": round(float(item["lat"]), 4),
+                                    "lon": round(float(item["lon"]), 4)
+                                })
+        except Exception:
+            pass
+
+    # 4. Local Coordinate Mapper fallback
+    if not results:
+        parts = [p.strip() for p in query_str.split(",")]
         district = parts[0]
+        state = parts[1] if len(parts) > 1 else parts[0]
         lat, lon = map_location_to_coords(state, district)
-        return {
-            "results": [
-                {
-                    "name": district.title(),
-                    "region": state.title(),
-                    "country": "India",
-                    "lat": lat,
-                    "lon": lon,
-                }
-            ]
-        }
+        results.append({
+            "name": district.title(),
+            "region": state.title() if len(parts) > 1 else "India",
+            "country": "India",
+            "lat": round(lat, 4),
+            "lon": round(lon, 4),
+        })
 
-    unique = {}
-    for item in data:
-        key = (item["name"], item["region"], item["country"])
-        if key not in unique:
-            unique[key] = item
+    # Sort India results to the top
+    results.sort(key=lambda r: (0 if r.get("country", "").lower() == "india" else 1))
 
-    final = [
-        {
-            "name": v["name"],
-            "region": v["region"],
-            "country": v["country"],
-            "lat": v["lat"],
-            "lon": v["lon"]
-        }
-        for v in unique.values()
-    ]
-
-    return {"results": final}
+    return {"results": results[:6]}
 
 
 @app.get("/api/weather/current")
@@ -262,8 +374,9 @@ async def get_current_weather(lat: float, lon: float):
 
     # Fallback to Open-Meteo
     om = get_openmeteo_weather(lat, lon)
+    location_name = reverse_lookup_place(lat, lon)
     return CurrentWeatherOut(
-        location=f"Location ({lat:.2f}, {lon:.2f})",
+        location=location_name,
         coordinates={"lat": lat, "lon": lon},
         temperature=om["temperature"],
         feelsLike=om["feelsLike"],

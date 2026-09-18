@@ -515,13 +515,38 @@ def map_location_to_coords(state: str, district: str) -> Tuple[float, float]:
     ("ladakh", "kargil"): (34.5543, 76.1119),
     
     # Andaman and Nicobar
-    ("andaman and nicobar islands", "port blair"): (11.7401, 92.7673),
 }
 
-    
     key = (state.strip().lower(), district.strip().lower())
     if key in location_map:
         return location_map[key]
-    
+
+    # Check partial match on district
+    d_clean = district.strip().lower()
+    for (s, d), coords in location_map.items():
+        if d == d_clean or d_clean in d:
+            return coords
+
     # Default: center of India
     return 20.0, 78.0
+
+
+def reverse_lookup_place(lat: float, lon: float) -> str:
+    """
+    Find the closest Indian district/city for coordinates.
+    """
+    try:
+        closest_dist = float('inf')
+        closest_name = None
+        for (state, dist), (c_lat, c_lon) in location_map.items():
+            d = (lat - c_lat) ** 2 + (lon - c_lon) ** 2
+            if d < closest_dist:
+                closest_dist = d
+                closest_name = f"{dist.title()}, {state.title()}"
+
+        if closest_dist < 0.35 and closest_name:
+            return closest_name
+    except Exception:
+        pass
+
+    return f"Location ({lat:.2f}, {lon:.2f})"

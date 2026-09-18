@@ -13,6 +13,20 @@ const Weather: React.FC = () => {
   const [loading, setLoading] = useState<boolean>(false);
   const [selectedRadius, setSelectedRadius] = useState<number>(2);
 
+  // Dynamic Location State (supports live search and GPS detection)
+  const [locationOverride, setLocationOverride] = useState<{
+    name: string;
+    region: string;
+    lat: number;
+    lon: number;
+    isGps?: boolean;
+  } | null>(null);
+
+  const [searchQuery, setSearchQuery] = useState<string>('');
+  const [searchResults, setSearchResults] = useState<Array<{ name: string; region: string; country: string; lat: number; lon: number }>>([]);
+  const [isSearching, setIsSearching] = useState<boolean>(false);
+  const [showDropdown, setShowDropdown] = useState<boolean>(false);
+
   const selectedFarm = getSelectedFarm() || (user?.farms && user.farms.length > 0 ? user.farms[0] : null);
   const hasMultipleFarms = (user?.farms.length || 0) > 1;
   const userFarm = selectedFarm || {
@@ -23,8 +37,12 @@ const Weather: React.FC = () => {
     area: 5,
   };
 
+  const activeLocationTitle = locationOverride
+    ? `${locationOverride.name}, ${locationOverride.region}`
+    : userFarm.location;
+
   const [currentWeather, setCurrentWeather] = useState<any>({
-    location: userFarm.location,
+    location: activeLocationTitle,
     coordinates: userFarm.coordinates,
     temperature: 24.5,
     feelsLike: 25.2,
@@ -51,26 +69,113 @@ const Weather: React.FC = () => {
 
   const [hyperlocalData, setHyperlocalData] = useState<any | null>(null);
 
+  // Debounced search for location / district autocomplete
+  useEffect(() => {
+    if (!searchQuery || searchQuery.trim().length < 2) {
+      setSearchResults([]);
+      setShowDropdown(false);
+      return;
+    }
+    const timer = setTimeout(async () => {
+      setIsSearching(true);
+      try {
+        const res = await api.get('/api/geocode', { params: { q: searchQuery.trim() } });
+        const list = res?.results || res?.data?.results || [];
+        setSearchResults(list);
+        setShowDropdown(list.length > 0);
+      } catch {
+        setSearchResults([]);
+      } finally {
+        setIsSearching(false);
+      }
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
+
+  // Use device GPS location
+  const handleUseGpsLocation = async () => {
+    if (!('geolocation' in navigator)) {
+      alert('Geolocation is not supported by your browser.');
+      return;
+    }
+    setLoading(true);
+    try {
+      const pos = await new Promise<GeolocationPosition>((resolve, reject) => {
+        navigator.geolocation.getCurrentPosition(resolve, reject, { enableHighAccuracy: true, timeout: 8000 });
+      });
+      const lat = Number(pos.coords.latitude.toFixed(4));
+      const lon = Number(pos.coords.longitude.toFixed(4));
+      
+      // Attempt reverse lookup via geocode
+      let placeName = `GPS (${lat}, ${lon})`;
+      let regionName = 'Device Location';
+      try {
+        const curRes = await api.get('/api/weather/current', { params: { lat, lon } });
+        if (curRes?.location && !curRes.location.startsWith('Location')) {
+          placeName = curRes.location;
+        }
+      } catch {}
+
+      setLocationOverride({
+        name: placeName,
+        region: regionName,
+        lat,
+        lon,
+        isGps: true,
+      });
+      setSearchQuery('');
+      setShowDropdown(false);
+    } catch {
+      alert('Could not access device GPS. Please grant browser location permission.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSelectPlace = (place: { name: string; region: string; lat: number; lon: number }) => {
+    setLocationOverride({
+      name: place.name,
+      region: place.region,
+      lat: place.lat,
+      lon: place.lon,
+      isGps: false,
+    });
+    setSearchQuery(`${place.name}, ${place.region}`);
+    setShowDropdown(false);
+  };
+
+  // Reset override when farm changes
+  useEffect(() => {
+    setLocationOverride(null);
+    setSearchQuery('');
+  }, [selectedFarm?.id]);
+
   // Fetch live weather directly from API
   const fetchWeather = async () => {
     setLoading(true);
     try {
-      const coords = getUserCoordinates();
+      const defaultCoords = getUserCoordinates();
       const parts = (selectedFarm?.location || 'Bengaluru, Karnataka').split(',');
-      const district = parts[0]?.trim() || user?.district || 'Bengaluru';
-      const state = parts[1]?.trim() || user?.state || 'Karnataka';
+      const defaultDistrict = parts[0]?.trim() || user?.district || 'Bengaluru';
+      const defaultState = parts[1]?.trim() || user?.state || 'Karnataka';
+
+      const lat = locationOverride ? locationOverride.lat : defaultCoords.lat;
+      const lon = locationOverride ? locationOverride.lon : defaultCoords.lon;
+      const district = locationOverride ? locationOverride.name : defaultDistrict;
+      const state = locationOverride ? locationOverride.region : defaultState;
 
       // 1. Current Weather
       try {
         const curRes = await api.get('/api/weather/current', {
-          params: { lat: coords.lat, lon: coords.lon },
+          params: { lat, lon },
         });
         if (curRes) {
           const coordStr = typeof curRes.coordinates === 'object' && curRes.coordinates !== null
             ? `${curRes.coordinates.lat?.toFixed ? curRes.coordinates.lat.toFixed(4) : curRes.coordinates.lat}, ${curRes.coordinates.lon?.toFixed ? curRes.coordinates.lon.toFixed(4) : curRes.coordinates.lon}`
-            : (curRes.coordinates || `${coords.lat}, ${coords.lon}`);
+            : (curRes.coordinates || `${lat}, ${lon}`);
           setCurrentWeather({
             ...curRes,
+            location: locationOverride ? `${locationOverride.name}, ${locationOverride.region}` : curRes.location,
             coordinates: coordStr,
           });
         }
@@ -81,7 +186,7 @@ const Weather: React.FC = () => {
       // 2. Multi-Day Forecast (7 or 14 days)
       try {
         const fcRes = await api.get('/api/weather/forecast', {
-          params: { lat: coords.lat, lon: coords.lon, days: forecastDays },
+          params: { lat, lon, days: forecastDays },
         });
         if (fcRes?.days && fcRes.days.length > 0) {
           setForecastData(fcRes.days.map((d: any) => ({
@@ -103,8 +208,8 @@ const Weather: React.FC = () => {
       // 3. Hyperlocal Multi-Radius Analysis (2km, 5km, 10km)
       try {
         const hyperRes = await api.post('/api/weather/hyperlocal', {
-          lat: coords.lat,
-          lon: coords.lon,
+          lat,
+          lon,
           state_name: state,
           district_name: district,
           radii: [2, 5, 10],
@@ -126,7 +231,7 @@ const Weather: React.FC = () => {
     fetchWeather();
     const interval = setInterval(fetchWeather, 300000); // 5-minute live sync
     return () => clearInterval(interval);
-  }, [selectedFarm?.id, selectedFarm?.coordinates, forecastDays]);
+  }, [selectedFarm?.id, selectedFarm?.coordinates, forecastDays, locationOverride]);
 
   // Extract zones from API response
   const zones = useMemo(() => {
@@ -211,34 +316,156 @@ const Weather: React.FC = () => {
               <h1 style={{ fontSize: '2.2rem', fontWeight: 800, margin: '0 0 8px 0', color: 'var(--text-primary)' }}>
                 Farm Weather Intelligence
               </h1>
-              <div style={{ color: 'var(--text-secondary)', fontSize: '14px' }}>
-                📍 {userFarm.location} · Coordinates: {typeof currentWeather.coordinates === 'object' && currentWeather.coordinates !== null ? `${currentWeather.coordinates.lat}, ${currentWeather.coordinates.lon}` : String(currentWeather.coordinates || '')}
+              <div style={{ color: 'var(--text-secondary)', fontSize: '14px', display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                <span>📍 <strong>{currentWeather.location || activeLocationTitle}</strong></span>
+                <span style={{ color: 'var(--text-tertiary)' }}>•</span>
+                <span>Coordinates: <code>{typeof currentWeather.coordinates === 'object' && currentWeather.coordinates !== null ? `${currentWeather.coordinates.lat}, ${currentWeather.coordinates.lon}` : String(currentWeather.coordinates || '')}</code></span>
+                {locationOverride && (
+                  <span className="pill" style={{ fontSize: '11px', padding: '2px 8px', background: locationOverride.isGps ? 'rgba(59, 130, 246, 0.2)' : 'rgba(234, 179, 8, 0.2)', color: locationOverride.isGps ? '#60a5fa' : '#facc15' }}>
+                    {locationOverride.isGps ? '🛰️ Live GPS Active' : '🔍 Custom Location'}
+                  </span>
+                )}
               </div>
             </div>
 
-            {hasMultipleFarms && (
-              <div>
-                <label style={{ fontSize: '12px', color: 'var(--text-tertiary)', display: 'block', marginBottom: '4px' }}>
-                  Select Farm
-                </label>
-                <select
-                  value={selectedFarm?.id || ''}
-                  onChange={(e) => selectFarm(e.target.value)}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+              {hasMultipleFarms && (
+                <div>
+                  <label style={{ fontSize: '12px', color: 'var(--text-tertiary)', display: 'block', marginBottom: '4px' }}>
+                    Select Farm
+                  </label>
+                  <select
+                    value={selectedFarm?.id || ''}
+                    onChange={(e) => {
+                      selectFarm(e.target.value);
+                      setLocationOverride(null);
+                    }}
+                    style={{
+                      padding: '8px 14px',
+                      borderRadius: '8px',
+                      background: 'var(--bg-tertiary)',
+                      color: 'var(--text-primary)',
+                      border: '1px solid var(--border-color)',
+                      fontSize: '14px',
+                    }}
+                  >
+                    {user?.farms.map((farm) => (
+                      <option key={farm.id} value={farm.id}>
+                        {farm.name} ({farm.location})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              <button
+                onClick={handleUseGpsLocation}
+                disabled={loading}
+                className="btn-secondary"
+                style={{
+                  padding: '9px 16px',
+                  borderRadius: '8px',
+                  fontSize: '13px',
+                  fontWeight: 600,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  marginTop: hasMultipleFarms ? '18px' : '0',
+                }}
+                title="Detect exact GPS coordinates from browser"
+              >
+                📍 {loading ? 'Locating…' : 'Use Live GPS'}
+              </button>
+
+              {locationOverride && (
+                <button
+                  onClick={() => setLocationOverride(null)}
+                  className="btn-secondary"
                   style={{
-                    padding: '8px 14px',
+                    padding: '9px 14px',
                     borderRadius: '8px',
-                    background: 'var(--bg-tertiary)',
-                    color: 'var(--text-primary)',
-                    border: '1px solid var(--border-color)',
-                    fontSize: '14px',
+                    fontSize: '13px',
+                    marginTop: hasMultipleFarms ? '18px' : '0',
                   }}
+                  title="Reset to Farm default location"
                 >
-                  {user?.farms.map((farm) => (
-                    <option key={farm.id} value={farm.id}>
-                      {farm.name} ({farm.location})
-                    </option>
-                  ))}
-                </select>
+                  🔄 Reset to Farm
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Location & District Search Bar */}
+          <div style={{ marginTop: '16px', position: 'relative', maxWidth: '560px' }}>
+            <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+              <input
+                type="text"
+                placeholder="🔍 Search any district or city (e.g. Mysuru, Pune, Ludhiana, Mandya, Delhi)..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                onFocus={() => searchResults.length > 0 && setShowDropdown(true)}
+                style={{
+                  width: '100%',
+                  padding: '10px 40px 10px 14px',
+                  borderRadius: '10px',
+                  background: 'var(--bg-tertiary)',
+                  border: '1px solid var(--border-color)',
+                  color: 'var(--text-primary)',
+                  fontSize: '14px',
+                  outline: 'none',
+                }}
+              />
+              {isSearching && (
+                <div style={{ position: 'absolute', right: '12px', fontSize: '12px', color: 'var(--text-tertiary)' }}>
+                  ⏳
+                </div>
+              )}
+            </div>
+
+            {/* Dropdown search results */}
+            {showDropdown && searchResults.length > 0 && (
+              <div
+                style={{
+                  position: 'absolute',
+                  top: '100%',
+                  left: 0,
+                  right: 0,
+                  marginTop: '4px',
+                  background: 'var(--bg-secondary)',
+                  border: '1px solid var(--border-color)',
+                  borderRadius: '10px',
+                  boxShadow: '0 10px 25px rgba(0,0,0,0.5)',
+                  zIndex: 50,
+                  maxHeight: '260px',
+                  overflowY: 'auto',
+                }}
+              >
+                {searchResults.map((item, idx) => (
+                  <div
+                    key={idx}
+                    onClick={() => handleSelectPlace(item)}
+                    style={{
+                      padding: '10px 14px',
+                      borderBottom: idx < searchResults.length - 1 ? '1px solid var(--border-color)' : 'none',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                    }}
+                    onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(16, 185, 129, 0.1)')}
+                    onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+                  >
+                    <div>
+                      <strong style={{ color: 'var(--text-primary)', fontSize: '14px' }}>{item.name}</strong>
+                      <span style={{ color: 'var(--text-tertiary)', fontSize: '12px', marginLeft: '6px' }}>
+                        {item.region}, {item.country}
+                      </span>
+                    </div>
+                    <span style={{ color: 'var(--text-tertiary)', fontSize: '11px', fontFamily: 'monospace' }}>
+                      {item.lat}, {item.lon}
+                    </span>
+                  </div>
+                ))}
               </div>
             )}
           </div>

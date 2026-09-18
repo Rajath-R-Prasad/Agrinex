@@ -52,11 +52,12 @@ const Profile: React.FC = () => {
       setGeoStatus({ loading: true, text: 'Detecting coordinates…' });
       try {
         const res = await api.get('/api/geocode', { params: { q } });
-        const first = (res.data?.results && res.data.results[0]) || null;
+        const list = res?.results || res?.data?.results || [];
+        const first = list.length > 0 ? list[0] : null;
         if (first && typeof first.lat === 'number' && typeof first.lon === 'number') {
           const coords = `${Number(first.lat.toFixed(4))}, ${Number(first.lon.toFixed(4))}`;
           setNewFarm(prev => ({ ...prev, coordinates: coords }));
-          setGeoStatus({ loading: false, text: `Auto-detected: ${coords}` });
+          setGeoStatus({ loading: false, text: `Auto-detected: ${coords} (${first.name}, ${first.region})` });
         } else {
           setGeoStatus({ loading: false, text: 'No coordinates found for location' });
         }
@@ -479,11 +480,12 @@ interface FarmCardProps {
       setEditGeoStatus({ loading: true, text: 'Detecting coordinates…' });
       try {
         const res = await api.get('/api/geocode', { params: { q } });
-        const first = (res.data?.results && res.data.results[0]) || null;
+        const list = res?.results || res?.data?.results || [];
+        const first = list.length > 0 ? list[0] : null;
         if (first && typeof first.lat === 'number' && typeof first.lon === 'number') {
           const coords = `${Number(first.lat.toFixed(4))}, ${Number(first.lon.toFixed(4))}`;
           setEditData(prev => ({ ...prev, coordinates: coords }));
-          setEditGeoStatus({ loading: false, text: `Auto-detected: ${coords}` });
+          setEditGeoStatus({ loading: false, text: `Auto-detected: ${coords} (${first.name}, ${first.region})` });
         } else {
           setEditGeoStatus({ loading: false, text: 'No coordinates found' });
         }
