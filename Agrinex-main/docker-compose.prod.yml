@@ -1,0 +1,27 @@
+services:
+  backend:
+    image: rajathrrp/agrinex-backend:latest
+    container_name: agrinex-backend
+    restart: unless-stopped
+    ports:
+      - "8000"
+    environment:
+      PYTHONUNBUFFERED: "1"
+      PORT: "8000"
+    networks:
+      - agrinex-network
+
+  frontend:
+    image: rajathrrp/agrinex-frontend:latest
+    container_name: agrinex-frontend
+    restart: unless-stopped
+    ports:
+      - "5173:80"
+    depends_on:
+      - backend
+    networks:
+      - agrinex-network
+
+networks:
+  agrinex-network:
+    driver: bridge

@@ -14,10 +14,10 @@ const landingLinks = [
 const dashboardLinks = [
   { href: '/dashboard', label: 'Dashboard' },
   { href: '/weather', label: 'Weather' },
-  { href: '/network', label: 'Network' },
-  { href: '/soil', label: 'Soil' },
+  { href: '/soil', label: 'Soil Health' },
   { href: '/financial', label: 'Financial' },
 ];
+
 
 const NavBar: React.FC = () => {
   const { isAuthenticated, user, logout, getSelectedFarm } = useAuth();

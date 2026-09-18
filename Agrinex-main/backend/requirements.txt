@@ -12,7 +12,5 @@ httpx==0.28.1
 pydantic==2.9.2
 python-dotenv==1.0.1
 
-streamlit==1.38.0
-appwrite==4.0.0
 pydantic-settings==2.5.2
 

@@ -1,7 +1,7 @@
 import joblib
 import numpy as np
 import os
-from typing import Dict
+from typing import Dict, Optional, Any
 import pandas as pd
 
 
@@ -12,7 +12,11 @@ from .weather_service import get_openmeteo_weather, map_location_to_coords
 # We need to go up 3 levels to backend/, then into models/
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 IRRIGATION_MODEL_PATH = os.path.join(BASE_DIR, "models", "irrigation_model_pipeline.pkl")
-irrigation_model = joblib.load(IRRIGATION_MODEL_PATH)
+try:
+    irrigation_model = joblib.load(IRRIGATION_MODEL_PATH)
+except Exception as e:
+    print(f"[IrrigationService] Warning: Could not load model from {IRRIGATION_MODEL_PATH}: {e}")
+    irrigation_model = None
 
 
 SOIL_FEEL_MAP = {
@@ -98,20 +102,24 @@ def recommend_irrigation(
 
 def recommend_irrigation_with_weather(
     soil_feel: str,
-    application_rate_mm_per_h: float,
-    state_name: str,
-    district_name: str,
+    application_rate_mm_per_h: float = 5.0,
+    state_name: str = "Karnataka",
+    district_name: str = "Bengaluru",
+    lat: Optional[float] = None,
+    lon: Optional[float] = None,
 ) -> Dict:
     """
-    High-level function: fetch weather and recommend irrigation.
+    High-level function: fetch weather and recommend irrigation taking
+    hyperlocal weather into account.
     """
     try:
-        # Fetch weather
-        lat, lon = map_location_to_coords(state_name, district_name)
+        if lat is None or lon is None:
+            lat, lon = map_location_to_coords(state_name, district_name)
+        
         weather = get_openmeteo_weather(lat, lon)
-        rain_24h = weather["rain_24h"]
+        rain_24h = weather.get("rain_24h", 0.0)
 
-        # Get irrigation recommendation
+        # Get core recommendation
         result = recommend_irrigation(
             soil_feel=soil_feel,
             application_rate_mm_per_h=application_rate_mm_per_h,
@@ -121,18 +129,20 @@ def recommend_irrigation_with_weather(
         result["weather"] = weather
         result["state"] = state_name
         result["district"] = district_name
-        if result["success"]:
-            appwrite_service.log_irrigation(
-            user_id="temp_user",  # from auth later
-            farm_id="temp_farm", 
-            log_data=result
-    )
+        result["coordinates"] = {"lat": lat, "lon": lon}
+
+        # Multi-radius insights summary
+        result["hyperlocal_summary"] = {
+            "immediate_2km_rain": rain_24h,
+            "next_48h_rain": weather.get("rain_48h", rain_24h),
+            "humidity": weather.get("humidity", 60),
+            "temperature": weather.get("temperature", 25.0),
+        }
+
         return result
     except Exception as e:
         return {
             "success": False,
             "error": f"Weather-based irrigation recommendation failed: {str(e)}",
         }
-   
 
-# Inirrigation.py - replace supabase logging

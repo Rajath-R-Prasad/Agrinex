@@ -103,17 +103,6 @@ const Dashboard: React.FC = () => {
             </div>
           </a>
 
-          <a href="/network" style={{ textDecoration: 'none' }}>
-            <div className="card-apple" style={{ cursor: 'pointer' }}>
-              <div style={{ fontSize: 'var(--h2)', marginBottom: 'var(--space-sm)' }}>🌐</div>
-              <h3 style={{ fontSize: 'var(--h3)', fontWeight: 600, color: 'var(--text-primary)', marginBottom: 'var(--space-xs)' }}>
-                Farm Network
-              </h3>
-              <p style={{ fontSize: 'var(--body)', color: 'var(--text-secondary)' }}>
-                Connect with other farms and share insights
-              </p>
-            </div>
-          </a>
 
           <a href="/soil" style={{ textDecoration: 'none' }}>
             <div className="card-apple" style={{ cursor: 'pointer' }}>

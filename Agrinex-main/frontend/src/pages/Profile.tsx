@@ -651,7 +651,7 @@ interface FarmCardProps {
             📍 {farm.location}
           </div>
           <div style={{ fontSize: 'var(--body)', color: 'var(--text-tertiary)', marginBottom: 'var(--space-xs)' }}>
-            {farm.coordinates}
+            {typeof farm.coordinates === 'object' && farm.coordinates !== null ? `${(farm.coordinates as any).lat}, ${(farm.coordinates as any).lon}` : String(farm.coordinates || '')}
           </div>
           <div style={{ display: 'flex', gap: 'var(--space-md)', marginTop: 'var(--space-sm)', flexWrap: 'wrap' }}>
             {farm.area > 0 && (

@@ -1,368 +1,611 @@
-import React, { useMemo, useEffect, useState } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import api from '../lib/api';
+import DynamicBackground from '../components/DynamicBackground';
+
+interface SoilBenchmark {
+  n: number;
+  p: number;
+  k: number;
+  ph: number;
+  desc: string;
+}
+
+const SOIL_TYPE_PRESETS: Record<string, SoilBenchmark> = {
+  'Red Soil': { n: 45, p: 20, k: 35, ph: 6.0, desc: 'Porous, iron-rich, slightly acidic. Needs organic matter and balanced N.' },
+  'Black Soil': { n: 60, p: 18, k: 85, ph: 8.0, desc: 'High clay, moisture-retentive, rich in potassium. Alkaline pH.' },
+  'Alluvial Soil': { n: 75, p: 40, k: 65, ph: 7.2, desc: 'Highly fertile river plains soil with optimal balanced nutrients.' },
+  'Loamy Soil': { n: 70, p: 35, k: 60, ph: 6.8, desc: 'Ideal agricultural balance of sand, silt, and clay. Excellent drainage.' },
+  'Sandy Soil': { n: 30, p: 15, k: 25, ph: 6.4, desc: 'Gritty, fast-draining, prone to nutrient leaching. Needs compost.' },
+  'Clay Soil': { n: 65, p: 30, k: 70, ph: 7.5, desc: 'Dense and heavy water retention. Slower root penetration.' },
+  'Laterite Soil': { n: 35, p: 15, k: 25, ph: 5.2, desc: 'Acidic, leached soil rich in iron and aluminium oxides.' },
+};
+
+const SOIL_FEELS = [
+  { id: 'dry and crumbly', label: '🪨 Dry and Crumbly', desc: 'Moisture <25%, high water deficit' },
+  { id: 'slightly damp', label: '🌿 Slightly Damp', desc: 'Moisture 40-55%, optimal root environment' },
+  { id: 'wet and muddy', label: '💧 Wet and Muddy', desc: 'Moisture >70%, saturated topsoil' },
+  { id: 'compacted', label: '⛓️ Compacted / Hard', desc: 'Aeration-stressed, crusted surface' },
+];
 
 const Soil: React.FC = () => {
-  const { user, getSelectedFarm } = useAuth();
+  const { user, getSelectedFarm, getUserCoordinates } = useAuth();
   const selectedFarm = getSelectedFarm() || (user?.farms?.[0] ?? null);
-  const [mlCropRecs, setMlCropRecs] = useState<Array<{ crop: string; suitability: number; reason: string }>>([]);
-  const [mlIrrigation, setMlIrrigation] = useState<any | null>(null);
-  const [gemini, setGemini] = useState<any | null>(null);
 
-  // Mock soil data (replace with backend API)
-  const soilData = useMemo(() => ({
-    summary: {
-      healthScore: 78,
-      salinity: 2.1, // dS/m
-      moisture: 38, // %
-      organicMatter: 2.0, // %
-      bulkDensity: 1.35, // g/cm3
-      cec: 18, // meq/100g
-    },
-    nutrients: {
-      nitrogen: 185, // kg/ha
-      phosphorus: 28,
-      potassium: 165,
-      ph: 6.9,
-      ec: 2.1,
-    },
-    layers: [
-      { name: 'Topsoil (0-15 cm)', depth: 15, texture: 'Loamy', moisture: 42, color: '#6b4e3d' },
-      { name: 'Root Zone (15-45 cm)', depth: 30, texture: 'Sandy Loam', moisture: 35, color: '#7c5a45' },
-      { name: 'Subsoil (45-90 cm)', depth: 45, texture: 'Clay Loam', moisture: 30, color: '#8a654d' },
-    ],
-    recommendations: [
-      {
-        title: 'Improve Organic Matter',
-        detail: 'Add 3-4 tons/acre compost before next sowing to raise OM from 2.0% to 2.5%',
-        impact: '+8% water retention, +6% yield stability',
-        priority: 'HIGH',
-      },
-      {
-        title: 'Salinity Management',
-        detail: 'Light leaching irrigation (25 mm) + gypsum 400 kg/acre to lower EC from 2.1→1.8 dS/m',
-        impact: 'Reduce salt stress, protect seedlings',
-        priority: 'MEDIUM',
-      },
-      {
-        title: 'Balanced Nutrition',
-        detail: 'Apply 90:40:40 NPK split (40% basal, 30% tillering, 30% panicle)',
-        impact: '+10% nutrient use efficiency',
-        priority: 'MEDIUM',
-      },
-    ],
-    geminiInsights: [
-      'Soil texture mix supports cereals and pulses; avoid salt-sensitive vegetables until EC <1.8',
-      'Morning irrigations recommended to minimize evap losses on current moisture profile',
-      'Cover cropping (legumes) post-harvest to boost nitrogen and organic matter',
-    ],
-    cropMatches: [
-      { crop: 'Wheat', suitability: 88, reason: 'Optimal pH, adequate moisture, moderate EC tolerance' },
-      { crop: 'Barley', suitability: 85, reason: 'Handles current EC, suits loamy profile' },
-      { crop: 'Chickpea', suitability: 82, reason: 'Prefers near-neutral pH, benefits from current OM' },
-    ],
-  }), []);
+  // Form State for Crop Prediction & Soil Health
+  const [selectedSoilType, setSelectedSoilType] = useState<string>('Red Soil');
+  const [selectedSoilFeel, setSelectedSoilFeel] = useState<string>('slightly damp');
+  const [nitrogen, setNitrogen] = useState<number>(45);
+  const [phosphorus, setPhosphorus] = useState<number>(20);
+  const [potassium, setPotassium] = useState<number>(35);
+  const [stateName, setStateName] = useState<string>(user?.state || 'Karnataka');
+  const [districtName, setDistrictName] = useState<string>(user?.district || 'Bengaluru');
 
+  const [loading, setLoading] = useState<boolean>(false);
+  const [cropResult, setCropResult] = useState<any | null>(null);
+  const [irrigationResult, setIrrigationResult] = useState<any | null>(null);
+
+  // When soil type changes, optionally load presets
+  const handleSoilTypeChange = (newType: string) => {
+    setSelectedSoilType(newType);
+    const preset = SOIL_TYPE_PRESETS[newType];
+    if (preset) {
+      setNitrogen(preset.n);
+      setPhosphorus(preset.p);
+      setPotassium(preset.k);
+    }
+  };
+
+  // Run crop recommendation and irrigation prediction via POST
+  const runPrediction = async () => {
+    setLoading(true);
+    try {
+      const coords = getUserCoordinates();
+      
+      // POST request to advanced crop prediction endpoint
+      const cropRes = await api.post('/api/v1/crop/predict-advanced', {
+        soil_type: selectedSoilType,
+        soil_feel: selectedSoilFeel,
+        n: Number(nitrogen),
+        p: Number(phosphorus),
+        k: Number(potassium),
+        state_name: stateName,
+        district_name: districtName,
+        lat: coords.lat,
+        lon: coords.lon,
+      });
+
+      // POST request to irrigation recommendation endpoint
+      const irriRes = await api.post('/api/v1/irrigation/recommend', {
+        soil_feel: selectedSoilFeel,
+        application_rate: 5.0,
+        state_name: stateName,
+        district_name: districtName,
+        lat: coords.lat,
+        lon: coords.lon,
+      });
+
+      if (cropRes) {
+        setCropResult(cropRes);
+      }
+      if (irriRes) {
+        setIrrigationResult(irriRes);
+      }
+    } catch (err) {
+      console.error('Prediction failed:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Auto-run on initial mount with farm defaults
   useEffect(() => {
-    const run = async () => {
-      try {
-        const q = selectedFarm?.location || 'Bengaluru, Karnataka';
-        const geoRes = await api.get('/api/geocode', { params: { q } });
-        const loc = (geoRes.data?.results && geoRes.data.results[0]) || null;
-        const stateName = loc?.region || (q.split(',')[1]?.trim() ?? 'Karnataka');
-        const districtName = loc?.name || (q.split(',')[0]?.trim() ?? 'Bengaluru');
-        const soilType = selectedFarm?.soilType || 'Loam';
-        const moisturePct = soilData.summary.moisture;
-        const soilQuality = moisturePct < 35 ? 'Poor' : moisturePct > 65 ? 'Rich' : 'Medium';
-        const soilFeel = moisturePct < 35 ? 'dry and crumbly' : moisturePct > 65 ? 'wet and muddy' : 'slightly damp';
-        const applicationRate = 5.0;
-        const cropRes = await api.post('/api/v1/crop/recommend', {
-          soil_type: soilType,
-          soil_quality: soilQuality,
-          state_name: stateName,
-          district_name: districtName,
-        });
-        const irrigRes = await api.post('/api/v1/irrigation/recommend', {
-          soil_feel: soilFeel,
-          application_rate: applicationRate,
-          state_name: stateName,
-          district_name: districtName,
-        });
-        setMlCropRecs(cropRes.data?.recommendations || []);
-        setMlIrrigation(irrigRes.data || null);
-        let lat: number | null = null;
-        let lon: number | null = null;
-        if (selectedFarm?.coordinates) {
-          const cleaned = selectedFarm.coordinates.replace(/[^\d\.,\- ]/g, '');
-          const parts = cleaned.split(',').map(s => s.trim());
-          if (parts.length >= 2) {
-            const plat = Number(parts[0]);
-            const plon = Number(parts[1]);
-            if (!Number.isNaN(plat) && !Number.isNaN(plon)) {
-              lat = plat;
-              lon = plon;
-            }
-          }
-        }
-        const gRes = await api.post('/api/weather/gemini-insights', { lat: lat ?? 12.9716, lon: lon ?? 77.5946, days: 7 });
-        setGemini(gRes.data || null);
-      } catch {}
-    };
-    run();
+    if (selectedFarm?.soilType && SOIL_TYPE_PRESETS[selectedFarm.soilType]) {
+      setSelectedSoilType(selectedFarm.soilType);
+      const preset = SOIL_TYPE_PRESETS[selectedFarm.soilType];
+      setNitrogen(preset.n);
+      setPhosphorus(preset.p);
+      setPotassium(preset.k);
+    }
+    if (user?.state) setStateName(user.state);
+    if (user?.district) setDistrictName(user.district);
+
+    runPrediction();
   }, [selectedFarm?.id]);
 
-  return (
-    <section className="section" style={{ paddingTop: 'var(--space-xl)' }}>
-      <div className="container">
-        {/* Header */}
-        <div style={{ marginBottom: 'var(--space-xl)' }}>
-          <div className="pill" style={{ marginBottom: 'var(--space-sm)' }}>🌱 Soil Intelligence</div>
-          <h1 style={{ fontSize: 'var(--h1)', marginBottom: 'var(--space-md)', color: 'var(--text-primary)' }}>
-            Soil Health & Visual Analysis
-          </h1>
-          <p style={{ fontSize: 'var(--body-lg)', color: 'var(--text-secondary)', maxWidth: 'var(--narrow-width)', lineHeight: 1.6 }}>
-            Visualize your soil profile, key metrics, and AI-backed recommendations. We blend soil analytics with market-aware crop matching to help you decide what to grow next.
-          </p>
-        </div>
+  // Derived soil layer graphic data based on soil type
+  const soilLayerColor = useMemo(() => {
+    if (selectedSoilType.includes('Red')) return '#991b1b';
+    if (selectedSoilType.includes('Black')) return '#1e293b';
+    if (selectedSoilType.includes('Alluvial')) return '#78350f';
+    if (selectedSoilType.includes('Sandy')) return '#d97706';
+    if (selectedSoilType.includes('Laterite')) return '#b45309';
+    return '#573a27';
+  }, [selectedSoilType]);
 
-        {/* Farm context */}
-        {selectedFarm && (
-          <div className="card-apple" style={{ marginBottom: 'var(--space-lg)' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 'var(--space-md)' }}>
-              <div>
-                <div style={{ fontSize: 'var(--body)', color: 'var(--text-tertiary)', marginBottom: 'var(--space-xs)' }}>
-                  Analyzing Farm
+  const soilEval = cropResult?.soil_evaluation;
+  const recommendedCrops = cropResult?.recommended_crops || [];
+
+  return (
+    <>
+      <DynamicBackground />
+      <section className="section" style={{ paddingTop: 'var(--space-xl)', position: 'relative', zIndex: 10 }}>
+        <div className="container">
+          {/* Header */}
+          <div style={{ marginBottom: 'var(--space-xl)' }}>
+            <div className="pill" style={{ marginBottom: 'var(--space-sm)', background: 'rgba(16, 185, 129, 0.15)', borderColor: 'var(--green-primary)', color: 'var(--green-light)' }}>
+              🌱 Soil Diagnostic Studio & Crop Predictor
+            </div>
+            <h1 style={{ fontSize: 'var(--h1)', marginBottom: 'var(--space-sm)', color: 'var(--text-primary)' }}>
+              Soil Health & Rule-Based Crop Prediction
+            </h1>
+            <p style={{ fontSize: 'var(--body-lg)', color: 'var(--text-secondary)', maxWidth: 'var(--narrow-width)', lineHeight: 1.6 }}>
+              Input your N-P-K nutrient values, soil texture, and tactile soil feel. Our backend evaluates benchmark agronomic rules for <strong>Red, Black, Alluvial, Loamy, Laterite, and Clay soils</strong> and predicts the best yielding crops with precision irrigation guidance.
+            </p>
+          </div>
+
+          {/* Farm Overview Banner */}
+          {selectedFarm && (
+            <div className="card-apple" style={{ marginBottom: 'var(--space-lg)', background: 'rgba(2, 44, 34, 0.6)', backdropFilter: 'blur(12px)', border: '1px solid rgba(16, 185, 129, 0.25)' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 'var(--space-md)' }}>
+                <div>
+                  <div style={{ fontSize: 'var(--body)', color: 'var(--text-tertiary)', marginBottom: '4px' }}>Active Farm Profile</div>
+                  <div style={{ fontSize: 'var(--h2)', fontWeight: 700, color: 'var(--text-primary)' }}>
+                    {selectedFarm.name}
+                  </div>
+                  <div style={{ fontSize: 'var(--body)', color: 'var(--text-secondary)', marginTop: '4px' }}>
+                    📍 {selectedFarm.location} · 📐 {selectedFarm.area || 5} acres · Coordinates: {typeof selectedFarm.coordinates === 'object' && selectedFarm.coordinates !== null ? `${(selectedFarm.coordinates as any).lat}, ${(selectedFarm.coordinates as any).lon}` : (selectedFarm.coordinates || 'Auto-Detected')}
+                  </div>
                 </div>
-                <div style={{ fontSize: 'var(--h2)', fontWeight: 600, color: 'var(--text-primary)' }}>
-                  {selectedFarm.name}
+                <div style={{
+                  padding: '12px 20px',
+                  borderRadius: 'var(--space-xs)',
+                  background: 'rgba(16, 185, 129, 0.2)',
+                  border: '1px solid var(--green-primary)',
+                  textAlign: 'right',
+                }}>
+                  <div style={{ fontSize: '11px', color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Soil Health Score</div>
+                  <div style={{ fontSize: '24px', fontWeight: 800, color: 'var(--green-light)' }}>
+                    {soilEval?.health_score || 82} / 100
+                  </div>
                 </div>
-                <div style={{ fontSize: 'var(--body)', color: 'var(--text-secondary)', marginTop: '4px' }}>
-                  {selectedFarm.location} · {selectedFarm.area || 0} acres
-                </div>
-              </div>
-              <div style={{
-                padding: 'var(--space-sm) var(--space-md)',
-                borderRadius: 'var(--space-xs)',
-                background: 'rgba(16, 185, 129, 0.15)',
-                border: '1px solid var(--green-primary)',
-                color: 'var(--green-light)',
-                fontSize: 'var(--body)',
-                fontWeight: 600,
-              }}>
-                Soil Score: {soilData.summary.healthScore}/100
               </div>
             </div>
-          </div>
-        )}
+          )}
 
-        {/* Key metrics */}
-        <div className="card-apple" style={{ marginBottom: 'var(--space-xl)' }}>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 'var(--space-md)' }}>
-            {[
-              { label: 'Soil Health', value: `${soilData.summary.healthScore}/100` },
-              { label: 'Salinity (EC)', value: `${soilData.summary.salinity} dS/m` },
-              { label: 'Moisture', value: `${soilData.summary.moisture}%` },
-              { label: 'Organic Matter', value: `${soilData.summary.organicMatter}%` },
-              { label: 'Bulk Density', value: `${soilData.summary.bulkDensity} g/cm³` },
-              { label: 'CEC', value: `${soilData.summary.cec} meq/100g` },
-            ].map((m, i) => (
-              <div key={i} style={{ padding: 'var(--space-md)', borderRadius: 'var(--space-xs)', border: '1px solid var(--border-color)', background: 'var(--bg-tertiary)' }}>
-                <div style={{ fontSize: '12px', color: 'var(--text-tertiary)', marginBottom: '4px' }}>{m.label}</div>
-                <div style={{ fontSize: 'var(--h3)', fontWeight: 700, color: 'var(--text-primary)' }}>{m.value}</div>
-              </div>
-            ))}
-          </div>
-        </div>
+          {/* MAIN GRID: Input Form & Soil Diagnostics */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))', gap: 'var(--space-xl)', marginBottom: 'var(--space-xl)' }}>
+            
+            {/* INPUT PANEL */}
+            <div className="card-apple" style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)' }}>
+              <h3 style={{ fontSize: 'var(--h3)', fontWeight: 700, color: 'var(--text-primary)', marginBottom: 'var(--space-md)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span>🧪</span> Enter Soil & Nutrient Parameters
+              </h3>
 
-        {/* Soil profile visualization */}
-        <div className="card-apple" style={{ marginBottom: 'var(--space-xl)', padding: 'var(--space-lg)' }}>
-          <h3 style={{ fontSize: 'var(--h2)', fontWeight: 600, color: 'var(--text-primary)', marginBottom: 'var(--space-md)' }}>
-            Soil Profile Visualization
-          </h3>
-          <div style={{ display: 'grid', gridTemplateColumns: '1.1fr 1.2fr', gap: 'var(--space-xl)', alignItems: 'stretch', minHeight: '320px' }}>
-            <div style={{ display: 'grid', gap: 'var(--space-sm)' }}>
-              <div style={{ position: 'relative', borderRadius: 'var(--space-xs)', border: '1px solid var(--border-color)', overflow: 'hidden', background: 'var(--bg-tertiary)', minHeight: '260px' }}>
-                {soilData.layers.map((layer, idx) => (
-                  <div
-                    key={idx}
+              <div style={{ display: 'grid', gap: 'var(--space-md)' }}>
+                {/* Soil Type Selector */}
+                <div>
+                  <label style={{ display: 'block', fontSize: '13px', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '6px' }}>
+                    1. Soil Type Classification
+                  </label>
+                  <select
+                    value={selectedSoilType}
+                    onChange={(e) => handleSoilTypeChange(e.target.value)}
                     style={{
-                      position: 'relative',
-                      height: `${(layer.depth / 90) * 100}%`,
-                      background: layer.color,
-                      borderBottom: idx !== soilData.layers.length - 1 ? '1px solid rgba(255,255,255,0.08)' : 'none',
-                      display: 'flex',
-                      alignItems: 'center',
-                      padding: '0 var(--space-sm)',
-                      color: 'white',
-                      fontSize: '12px',
-                      animation: `pulseLayer 6s ease-in-out ${idx * 0.4}s infinite`,
+                      width: '100%',
+                      padding: '10px 14px',
+                      borderRadius: 'var(--space-xs)',
+                      background: 'var(--bg-tertiary)',
+                      border: '1px solid var(--border-color)',
+                      color: 'var(--text-primary)',
+                      fontSize: '14px',
+                      fontWeight: 600,
                     }}
                   >
-                    {layer.name} · {layer.texture} · {layer.moisture}% moisture
-                    <div style={{
-                      position: 'absolute',
-                      right: '8px',
-                      top: '50%',
-                      transform: 'translateY(-50%)',
-                      padding: '2px 8px',
-                      borderRadius: '999px',
-                      background: 'rgba(255,255,255,0.14)',
-                      color: 'white',
-                      fontSize: '11px',
-                      border: '1px solid rgba(255,255,255,0.2)',
-                    }}>
-                      {layer.texture}
+                    {Object.keys(SOIL_TYPE_PRESETS).map((st) => (
+                      <option key={st} value={st}>{st}</option>
+                    ))}
+                  </select>
+                  <div style={{ fontSize: '12px', color: 'var(--text-tertiary)', marginTop: '4px', fontStyle: 'italic' }}>
+                    {SOIL_TYPE_PRESETS[selectedSoilType]?.desc}
+                  </div>
+                </div>
+
+                {/* Soil Feel Selector */}
+                <div>
+                  <label style={{ display: 'block', fontSize: '13px', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '6px' }}>
+                    2. How does the soil feel in hand?
+                  </label>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                    {SOIL_FEELS.map((feel) => (
+                      <button
+                        key={feel.id}
+                        type="button"
+                        onClick={() => setSelectedSoilFeel(feel.id)}
+                        style={{
+                          padding: '8px 12px',
+                          borderRadius: '6px',
+                          border: selectedSoilFeel === feel.id ? '2px solid var(--green-primary)' : '1px solid var(--border-color)',
+                          background: selectedSoilFeel === feel.id ? 'rgba(16, 185, 129, 0.15)' : 'var(--bg-tertiary)',
+                          color: selectedSoilFeel === feel.id ? 'var(--green-light)' : 'var(--text-secondary)',
+                          fontSize: '12px',
+                          fontWeight: 600,
+                          textAlign: 'left',
+                          cursor: 'pointer',
+                          transition: 'all 0.2s ease',
+                        }}
+                      >
+                        {feel.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* N-P-K Sliders and Numeric Inputs */}
+                <div style={{ background: 'var(--bg-tertiary)', padding: '14px', borderRadius: 'var(--space-xs)', border: '1px solid var(--border-color)' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                    <span style={{ fontSize: '13px', fontWeight: 700, color: 'var(--text-primary)' }}>
+                      3. N-P-K Values (kg/ha)
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => handleSoilTypeChange(selectedSoilType)}
+                      style={{
+                        padding: '4px 8px',
+                        background: 'transparent',
+                        border: '1px solid var(--green-primary)',
+                        color: 'var(--green-light)',
+                        borderRadius: '4px',
+                        fontSize: '11px',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      Reset to Benchmark
+                    </button>
+                  </div>
+
+                  {/* Nitrogen */}
+                  <div style={{ marginBottom: '12px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', marginBottom: '4px' }}>
+                      <span style={{ color: 'var(--text-secondary)' }}>Nitrogen (N):</span>
+                      <span style={{ fontWeight: 700, color: '#38bdf8' }}>{nitrogen} kg/ha</span>
+                    </div>
+                    <input
+                      type="range"
+                      min="10"
+                      max="150"
+                      value={nitrogen}
+                      onChange={(e) => setNitrogen(Number(e.target.value))}
+                      style={{ width: '100%', accentColor: '#38bdf8' }}
+                    />
+                  </div>
+
+                  {/* Phosphorus */}
+                  <div style={{ marginBottom: '12px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', marginBottom: '4px' }}>
+                      <span style={{ color: 'var(--text-secondary)' }}>Phosphorus (P):</span>
+                      <span style={{ fontWeight: 700, color: '#fb923c' }}>{phosphorus} kg/ha</span>
+                    </div>
+                    <input
+                      type="range"
+                      min="5"
+                      max="80"
+                      value={phosphorus}
+                      onChange={(e) => setPhosphorus(Number(e.target.value))}
+                      style={{ width: '100%', accentColor: '#fb923c' }}
+                    />
+                  </div>
+
+                  {/* Potassium */}
+                  <div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', marginBottom: '4px' }}>
+                      <span style={{ color: 'var(--text-secondary)' }}>Potassium (K):</span>
+                      <span style={{ fontWeight: 700, color: '#a78bfa' }}>{potassium} kg/ha</span>
+                    </div>
+                    <input
+                      type="range"
+                      min="10"
+                      max="150"
+                      value={potassium}
+                      onChange={(e) => setPotassium(Number(e.target.value))}
+                      style={{ width: '100%', accentColor: '#a78bfa' }}
+                    />
+                  </div>
+                </div>
+
+                {/* Region & Location Fields */}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '12px', color: 'var(--text-tertiary)', marginBottom: '4px' }}>State</label>
+                    <input
+                      type="text"
+                      value={stateName}
+                      onChange={(e) => setStateName(e.target.value)}
+                      style={{
+                        width: '100%',
+                        padding: '8px 12px',
+                        background: 'var(--bg-tertiary)',
+                        border: '1px solid var(--border-color)',
+                        borderRadius: '6px',
+                        color: 'var(--text-primary)',
+                        fontSize: '13px',
+                      }}
+                    />
+                  </div>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '12px', color: 'var(--text-tertiary)', marginBottom: '4px' }}>District</label>
+                    <input
+                      type="text"
+                      value={districtName}
+                      onChange={(e) => setDistrictName(e.target.value)}
+                      style={{
+                        width: '100%',
+                        padding: '8px 12px',
+                        background: 'var(--bg-tertiary)',
+                        border: '1px solid var(--border-color)',
+                        borderRadius: '6px',
+                        color: 'var(--text-primary)',
+                        fontSize: '13px',
+                      }}
+                    />
+                  </div>
+                </div>
+
+                {/* Submit Action Button */}
+                <button
+                  type="button"
+                  onClick={runPrediction}
+                  disabled={loading}
+                  className="btn btn-primary"
+                  style={{
+                    width: '100%',
+                    justifyContent: 'center',
+                    padding: '12px',
+                    fontSize: '15px',
+                    fontWeight: 700,
+                  }}
+                >
+                  {loading ? 'Analyzing Soil & Weather...' : '⚡ Predict Suitable Crops'}
+                </button>
+              </div>
+            </div>
+
+            {/* RULE-BASED SOIL EVALUATION RESULTS */}
+            <div style={{ display: 'grid', gap: 'var(--space-md)' }}>
+              
+              {/* NPK Status Badges */}
+              <div className="card-apple" style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)' }}>
+                <h3 style={{ fontSize: 'var(--h3)', fontWeight: 700, color: 'var(--text-primary)', marginBottom: 'var(--space-md)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span>📋</span> Rule-Based Soil Nutrient Analysis
+                </h3>
+
+                <div style={{ display: 'grid', gap: '10px' }}>
+                  {/* Nitrogen Card */}
+                  <div style={{ padding: '12px', borderRadius: '8px', background: 'var(--bg-tertiary)', border: '1px solid var(--border-color)' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                      <span style={{ fontWeight: 700, color: 'var(--text-primary)', fontSize: '14px' }}>Nitrogen (N)</span>
+                      <span style={{
+                        padding: '2px 8px',
+                        borderRadius: '4px',
+                        fontSize: '11px',
+                        fontWeight: 700,
+                        background: soilEval?.nitrogen.rating === 'optimal' ? 'rgba(16, 185, 129, 0.2)' : soilEval?.nitrogen.rating === 'low' ? 'rgba(239, 68, 68, 0.2)' : 'rgba(245, 158, 11, 0.2)',
+                        color: soilEval?.nitrogen.rating === 'optimal' ? 'var(--green-light)' : soilEval?.nitrogen.rating === 'low' ? '#f87171' : '#fbbf24',
+                      }}>
+                        {soilEval?.nitrogen.status || 'Optimal'}
+                      </span>
+                    </div>
+                    <div style={{ fontSize: '12px', color: 'var(--text-secondary)', lineHeight: 1.4 }}>
+                      {soilEval?.nitrogen.advice || 'Nitrogen level in standard range for vegetative growth.'}
                     </div>
                   </div>
-                ))}
-                {/* Moisture gradient overlay */}
-                <div style={{
-                  position: 'absolute',
-                  right: '0',
-                  top: 0,
-                  bottom: 0,
-                  width: '12px',
-                  background: 'linear-gradient(180deg, rgba(125, 211, 252, 0.8), rgba(16, 185, 129, 0.8))',
-                  opacity: 0.5,
-                  animation: 'sheen 3s ease-in-out infinite',
-                }} />
-              </div>
-              <div style={{ display: 'flex', gap: 'var(--space-sm)', flexWrap: 'wrap', fontSize: '11px', color: 'var(--text-tertiary)' }}>
-                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
-                  <span style={{ width: '12px', height: '12px', background: '#6b4e3d', borderRadius: '2px' }} /> Loamy
-                </span>
-                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
-                  <span style={{ width: '12px', height: '12px', background: '#7c5a45', borderRadius: '2px' }} /> Sandy Loam
-                </span>
-                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
-                  <span style={{ width: '12px', height: '12px', background: '#8a654d', borderRadius: '2px' }} /> Clay Loam
-                </span>
-                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
-                  Moisture ribbon shows relative moisture (top → bottom)
-                </span>
-              </div>
-            </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 'var(--space-md)', alignContent: 'start' }}>
-              <MetricCard label="pH" value={soilData.nutrients.ph.toFixed(1)} />
-              <MetricCard label="EC" value={`${soilData.nutrients.ec} dS/m`} />
-              <MetricCard label="Nitrogen" value={`${soilData.nutrients.nitrogen} kg/ha`} />
-              <MetricCard label="Phosphorus" value={`${soilData.nutrients.phosphorus} kg/ha`} />
-              <MetricCard label="Potassium" value={`${soilData.nutrients.potassium} kg/ha`} />
-              <MetricCard label="Moisture" value={`${soilData.summary.moisture}%`} />
-            </div>
-          </div>
-        </div>
-        <style>{`
-          @keyframes sheen {
-            0% { opacity: 0.25; transform: translateY(-10%); }
-            50% { opacity: 0.6; transform: translateY(0%); }
-            100% { opacity: 0.25; transform: translateY(10%); }
-          }
-          @keyframes pulseLayer {
-            0%, 100% { filter: brightness(1); }
-            50% { filter: brightness(1.05); }
-          }
-        `}</style>
+                  {/* Phosphorus Card */}
+                  <div style={{ padding: '12px', borderRadius: '8px', background: 'var(--bg-tertiary)', border: '1px solid var(--border-color)' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                      <span style={{ fontWeight: 700, color: 'var(--text-primary)', fontSize: '14px' }}>Phosphorus (P)</span>
+                      <span style={{
+                        padding: '2px 8px',
+                        borderRadius: '4px',
+                        fontSize: '11px',
+                        fontWeight: 700,
+                        background: soilEval?.phosphorus.rating === 'optimal' ? 'rgba(16, 185, 129, 0.2)' : soilEval?.phosphorus.rating === 'low' ? 'rgba(239, 68, 68, 0.2)' : 'rgba(245, 158, 11, 0.2)',
+                        color: soilEval?.phosphorus.rating === 'optimal' ? 'var(--green-light)' : soilEval?.phosphorus.rating === 'low' ? '#f87171' : '#fbbf24',
+                      }}>
+                        {soilEval?.phosphorus.status || 'Optimal'}
+                      </span>
+                    </div>
+                    <div style={{ fontSize: '12px', color: 'var(--text-secondary)', lineHeight: 1.4 }}>
+                      {soilEval?.phosphorus.advice || 'Phosphorus is sufficient for root anchoring.'}
+                    </div>
+                  </div>
 
-        {/* Crop matching & insights */}
-        <div className="card-apple" style={{ marginBottom: 'var(--space-xl)', padding: 'var(--space-lg)' }}>
-          <h3 style={{ fontSize: 'var(--h2)', fontWeight: 600, color: 'var(--text-primary)', marginBottom: 'var(--space-md)' }}>
-            Crop Matching
-          </h3>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 'var(--space-md)' }}>
-            {(mlCropRecs.length > 0 ? mlCropRecs : soilData.cropMatches).map((c: any, i: number) => (
-              <div key={i} style={{ padding: 'var(--space-md)', border: '1px solid var(--border-color)', borderRadius: 'var(--space-xs)', background: 'var(--bg-tertiary)' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-sm)' }}>
-                  <div style={{ fontSize: 'var(--body)', fontWeight: 700, color: 'var(--text-primary)' }}>{c.crop}</div>
-                  <div style={{ padding: '4px 10px', borderRadius: '6px', background: 'rgba(16,185,129,0.12)', color: 'var(--green-light)', fontSize: '11px', fontWeight: 700 }}>
-                    {c.suitability}% fit
+                  {/* Potassium Card */}
+                  <div style={{ padding: '12px', borderRadius: '8px', background: 'var(--bg-tertiary)', border: '1px solid var(--border-color)' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                      <span style={{ fontWeight: 700, color: 'var(--text-primary)', fontSize: '14px' }}>Potassium (K)</span>
+                      <span style={{
+                        padding: '2px 8px',
+                        borderRadius: '4px',
+                        fontSize: '11px',
+                        fontWeight: 700,
+                        background: soilEval?.potassium.rating === 'optimal' ? 'rgba(16, 185, 129, 0.2)' : soilEval?.potassium.rating === 'low' ? 'rgba(239, 68, 68, 0.2)' : 'rgba(245, 158, 11, 0.2)',
+                        color: soilEval?.potassium.rating === 'optimal' ? 'var(--green-light)' : soilEval?.potassium.rating === 'low' ? '#f87171' : '#fbbf24',
+                      }}>
+                        {soilEval?.potassium.status || 'Optimal'}
+                      </span>
+                    </div>
+                    <div style={{ fontSize: '12px', color: 'var(--text-secondary)', lineHeight: 1.4 }}>
+                      {soilEval?.potassium.advice || 'Potassium ensures drought tolerance.'}
+                    </div>
                   </div>
                 </div>
-                <div style={{ fontSize: '12px', color: 'var(--text-secondary)', lineHeight: 1.6 }}>
-                  {c.reason}
+              </div>
+
+              {/* Amendments & Soil Profile Graphic */}
+              <div className="card-apple" style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                  <span style={{ fontSize: '13px', fontWeight: 700, color: 'var(--text-primary)' }}>
+                    🌾 Soil Amendments & Structure
+                  </span>
+                  <span style={{ fontSize: '12px', color: 'var(--text-tertiary)' }}>
+                    pH: {soilEval?.typical_ph || 6.8} · OM: {soilEval?.organic_matter || '1.5%'}
+                  </span>
+                </div>
+                <div style={{ fontSize: '12px', color: 'var(--text-secondary)', lineHeight: 1.5, marginBottom: '12px' }}>
+                  {soilEval?.soil_amendments || 'Apply compost to maintain organic carbon.'}
+                </div>
+
+                {/* Soil Cross-section */}
+                <div style={{
+                  height: '42px',
+                  borderRadius: '6px',
+                  overflow: 'hidden',
+                  display: 'flex',
+                  border: '1px solid var(--border-color)',
+                }}>
+                  <div style={{ flex: 1, background: soilLayerColor, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: '11px', fontWeight: 700 }}>
+                    Topsoil (0-15cm) · {selectedSoilType}
+                  </div>
+                  <div style={{ flex: 1, background: '#3b2f2f', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: '11px', fontWeight: 700 }}>
+                    Subsoil (15-45cm)
+                  </div>
                 </div>
               </div>
-            ))}
+
+              {/* Irrigation Advisory Card */}
+              {irrigationResult && (
+                <div className="card-apple" style={{
+                  background: irrigationResult.irrigate ? 'rgba(16, 185, 129, 0.12)' : 'rgba(245, 158, 11, 0.12)',
+                  border: irrigationResult.irrigate ? '1px solid var(--green-primary)' : '1px solid #f59e0b',
+                }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                    <span style={{ fontSize: '14px', fontWeight: 700, color: 'var(--text-primary)' }}>
+                      💧 Irrigation Decision (Based on Soil Feel)
+                    </span>
+                    <span style={{
+                      padding: '3px 10px',
+                      borderRadius: '999px',
+                      fontSize: '11px',
+                      fontWeight: 800,
+                      background: irrigationResult.irrigate ? 'var(--green-primary)' : '#f59e0b',
+                      color: '#ffffff',
+                    }}>
+                      {irrigationResult.irrigate ? 'IRRIGATE NOW' : 'HOLD IRRIGATION'}
+                    </span>
+                  </div>
+                  <div style={{ fontSize: '12px', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
+                    {irrigationResult.reason_weather}
+                  </div>
+                  {irrigationResult.irrigate && (
+                    <div style={{ display: 'flex', gap: '16px', marginTop: '8px', fontSize: '12px', color: 'var(--green-light)', fontWeight: 600 }}>
+                      <span>Water: {irrigationResult.water_mm} mm</span>
+                      <span>Duration: {irrigationResult.duration_hours} hrs</span>
+                      <span>Rate: {irrigationResult.application_rate_mm_per_h} mm/h</span>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
           </div>
 
-          <div style={{ marginTop: 'var(--space-lg)', paddingTop: 'var(--space-lg)', borderTop: '1px solid var(--border-color)' }}>
-            <div style={{ fontSize: '12px', color: 'var(--text-tertiary)', marginBottom: 'var(--space-sm)', fontWeight: 600 }}>
-              Insights (based on soil data)
+          {/* PREDICTED SUITABLE CROPS SECTION */}
+          <div className="card-apple" style={{ marginBottom: 'var(--space-xl)', background: 'var(--bg-card)', border: '1px solid var(--border-color)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-md)', flexWrap: 'wrap', gap: '8px' }}>
+              <div>
+                <h2 style={{ fontSize: 'var(--h2)', fontWeight: 700, color: 'var(--text-primary)' }}>
+                  🌾 Recommended Crops for {selectedSoilType} in {districtName}, {stateName}
+                </h2>
+                <p style={{ fontSize: '13px', color: 'var(--text-tertiary)', marginTop: '2px' }}>
+                  Ranked by combined agronomic suitability, N-P-K fit, local weather, and machine learning models.
+                </p>
+              </div>
+              <div className="pill" style={{ background: 'rgba(16, 185, 129, 0.15)', borderColor: 'var(--green-primary)', color: 'var(--green-light)' }}>
+                {recommendedCrops.length} Crops Evaluated
+              </div>
             </div>
-            <div style={{ display: 'grid', gap: 'var(--space-sm)' }}>
-              {(gemini?.insights || soilData.geminiInsights).map((insight: string, i: number) => (
-                <div key={i} style={{
-                  padding: 'var(--space-sm)',
-                  borderRadius: 'var(--space-xs)',
-                  border: '1px solid var(--border-color)',
-                  background: 'var(--bg-tertiary)',
-                  fontSize: 'var(--body)',
-                  color: 'var(--text-secondary)',
-                  lineHeight: 1.5,
-                }}>
-                  {insight}
+
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 'var(--space-md)' }}>
+              {recommendedCrops.map((cropItem: any, idx: number) => (
+                <div
+                  key={cropItem.crop}
+                  style={{
+                    padding: 'var(--space-md)',
+                    borderRadius: 'var(--space-xs)',
+                    background: 'var(--bg-tertiary)',
+                    border: idx === 0 ? '2px solid var(--green-primary)' : '1px solid var(--border-color)',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    justifyContent: 'space-between',
+                    position: 'relative',
+                    overflow: 'hidden',
+                  }}
+                >
+                  {idx === 0 && (
+                    <div style={{
+                      position: 'absolute',
+                      top: 0,
+                      right: 0,
+                      background: 'var(--green-primary)',
+                      color: '#fff',
+                      fontSize: '10px',
+                      fontWeight: 800,
+                      padding: '2px 8px',
+                      borderBottomLeftRadius: '6px',
+                    }}>
+                      TOP MATCH
+                    </div>
+                  )}
+
+                  <div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '8px' }}>
+                      <div>
+                        <div style={{ fontSize: '16px', fontWeight: 800, color: 'var(--text-primary)' }}>
+                          {cropItem.crop}
+                        </div>
+                        <div style={{ fontSize: '11px', color: 'var(--text-tertiary)' }}>
+                          {cropItem.category}
+                        </div>
+                      </div>
+                      <div style={{
+                        padding: '4px 10px',
+                        borderRadius: '6px',
+                        background: cropItem.suitability >= 80 ? 'rgba(16, 185, 129, 0.2)' : 'rgba(59, 130, 246, 0.2)',
+                        color: cropItem.suitability >= 80 ? 'var(--green-light)' : '#60a5fa',
+                        fontSize: '13px',
+                        fontWeight: 800,
+                      }}>
+                        {cropItem.suitability}% Fit
+                      </div>
+                    </div>
+
+                    <div style={{ fontSize: '12px', color: 'var(--text-secondary)', lineHeight: 1.5, marginBottom: '12px' }}>
+                      {cropItem.reason}
+                    </div>
+                  </div>
+
+                  <div style={{
+                    paddingTop: '8px',
+                    borderTop: '1px solid rgba(255,255,255,0.06)',
+                    display: 'grid',
+                    gridTemplateColumns: '1fr 1fr',
+                    gap: '4px',
+                    fontSize: '11px',
+                    color: 'var(--text-tertiary)'
+                  }}>
+                    <div>💧 Water: <strong style={{ color: 'var(--text-primary)' }}>{cropItem.water_requirement?.split(' ')[0] || 'Moderate'}</strong></div>
+                    <div>⏳ Duration: <strong style={{ color: 'var(--text-primary)' }}>{cropItem.growth_duration || '110d'}</strong></div>
+                    <div style={{ gridColumn: 'span 2' }}>📊 Yield: <strong style={{ color: 'var(--green-light)' }}>{cropItem.expected_yield || '3.5 t/ha'}</strong></div>
+                  </div>
                 </div>
               ))}
             </div>
           </div>
-        </div>
 
-        {/* Recommended actions */}
-        <div className="card-apple" style={{ padding: 'var(--space-lg)' }}>
-          <h3 style={{ fontSize: 'var(--h2)', fontWeight: 600, color: 'var(--text-primary)', marginBottom: 'var(--space-md)' }}>
-            Recommended Actions
-          </h3>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 'var(--space-md)' }}>
-            {soilData.recommendations.map((rec, i) => (
-              <div key={i} style={{
-                padding: 'var(--space-md)',
-                borderRadius: 'var(--space-xs)',
-                border: '1px solid var(--border-color)',
-                background: 'var(--bg-tertiary)',
-                display: 'grid',
-                gap: 'var(--space-xs)',
-              }}>
-                <div style={{ fontSize: 'var(--body)', fontWeight: 700, color: 'var(--text-primary)' }}>{rec.title}</div>
-                <div style={{ fontSize: '12px', color: 'var(--text-secondary)', lineHeight: 1.5 }}>{rec.detail}</div>
-                <div style={{ fontSize: '12px', color: 'var(--green-light)', fontWeight: 600 }}>{rec.impact}</div>
-                <div style={{
-                  fontSize: '11px',
-                  color: rec.priority === 'HIGH' ? '#ef4444' : rec.priority === 'MEDIUM' ? '#f59e0b' : 'var(--text-primary)',
-                  fontWeight: 700,
-                }}>
-                  Priority: {rec.priority}
-                </div>
-              </div>
-            ))}
-            {mlIrrigation && (
-              <div style={{
-                padding: 'var(--space-md)',
-                borderRadius: 'var(--space-xs)',
-                border: '1px solid var(--border-color)',
-                background: 'var(--bg-tertiary)',
-                display: 'grid',
-                gap: 'var(--space-xs)',
-              }}>
-                <div style={{ fontSize: 'var(--body)', fontWeight: 700, color: 'var(--text-primary)' }}>{mlIrrigation.irrigate ? 'Irrigate Now' : 'Wait'}</div>
-                <div style={{ fontSize: '12px', color: 'var(--text-secondary)', lineHeight: 1.5 }}>{mlIrrigation.reason_weather}</div>
-                <div style={{ fontSize: '12px', color: 'var(--green-light)', fontWeight: 600 }}>Water: {mlIrrigation.water_mm} mm</div>
-                <div style={{ fontSize: '12px', color: 'var(--green-light)', fontWeight: 600 }}>Duration: {mlIrrigation.duration_hours} h</div>
-              </div>
-            )}
-          </div>
         </div>
-      </div>
-    </section>
+      </section>
+    </>
   );
 };
 
-const MetricCard: React.FC<{ label: string; value: string }> = ({ label, value }) => (
-  <div style={{ padding: 'var(--space-md)', borderRadius: 'var(--space-xs)', border: '1px solid var(--border-color)', background: 'var(--bg-tertiary)' }}>
-    <div style={{ fontSize: '12px', color: 'var(--text-tertiary)', marginBottom: '4px' }}>{label}</div>
-    <div style={{ fontSize: 'var(--h3)', fontWeight: 700, color: 'var(--text-primary)' }}>{value}</div>
-  </div>
-);
-
 export default Soil;
-
