@@ -6,27 +6,39 @@ const Footer: React.FC = () => {
       <div className="container">
         <div className="footer-grid">
           <div>
-            <div className="title">Agrinex</div>
-            <div className="small" style={{ marginTop: 'var(--space-xs)' }}>© {new Date().getFullYear()} Agrinex · Agriculture-first intelligence.</div>
-            <div className="small" style={{ marginTop: '4px', color: 'var(--text-tertiary)' }}>Built exclusively for modern farming.</div>
+            <div className="title" style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--green-primary)' }}>
+              <span>🌿</span>
+              <span>Agrinex</span>
+            </div>
+            <div className="small" style={{ marginTop: '8px' }}>
+              © {new Date().getFullYear()} Agrinex · Agriculture-First Intelligence.
+            </div>
+            <div className="small" style={{ marginTop: '4px', color: 'var(--text-tertiary)' }}>
+              Built exclusively for modern farming operations.
+            </div>
           </div>
           <div>
             <div className="title">Product</div>
-            <a href="#overview">Overview</a>
-            <br />
-            <a href="#features">Features</a>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+              <a href="#overview">Overview</a>
+              <a href="#features">Features</a>
+              <a href="/weather">Weather Radar</a>
+              <a href="/soil">Soil Diagnostics</a>
+            </div>
           </div>
           <div>
             <div className="title">Network</div>
-            <a href="/network">Farm Network</a>
-            <br />
-            <a href="#impact">Impact</a>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+              <a href="/network">Farm Network</a>
+              <a href="/financial">Financials & ROI</a>
+            </div>
           </div>
           <div>
             <div className="title">Support</div>
-            <a href="mailto:support@agrinex.ai">support@agrinex.ai</a>
-            <br />
-            <a href="#cta">Contact</a>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+              <a href="mailto:support@agrinex.ai">support@agrinex.ai</a>
+              <a href="#cta">Contact Us</a>
+            </div>
           </div>
         </div>
       </div>
@@ -35,4 +47,3 @@ const Footer: React.FC = () => {
 };
 
 export default Footer;
-

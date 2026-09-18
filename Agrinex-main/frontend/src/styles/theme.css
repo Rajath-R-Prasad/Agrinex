@@ -2,17 +2,17 @@
   /* Dark Mode Color Palette */
   --bg-primary: #000000;
   --bg-secondary: #0a0a0a;
-  --bg-tertiary: #1a1a1a;
-  --bg-card: #1d1d1f;
-  --bg-card-hover: #252528;
+  --bg-tertiary: #161618;
+  --bg-card: #1c1c1e;
+  --bg-card-hover: #26262a;
   
   --text-primary: #ffffff;
   --text-secondary: #e5e5e7;
   --text-tertiary: #a1a1a6;
   --text-muted: #86868b;
   
-  --border-color: #2d2d30;
-  --border-hover: #3d3d42;
+  --border-color: #2c2c2e;
+  --border-hover: #3a3a3c;
   
   /* Agriculture Green Theme (optimized for dark mode) */
   --green-primary: #10b981;
@@ -25,35 +25,39 @@
   
   /* Legacy aliases for compatibility */
   --black: #000000;
-  --off-black: #1d1d1f;
+  --off-black: #1c1c1e;
   --dark-gray: #a1a1a6;
   --mid-gray: #86868b;
-  --light-gray: #1d1d1f;
+  --light-gray: #1c1c1e;
   --white: #ffffff;
 
-  --space-xs: 10px;
-  --space-sm: 16px;
-  --space-md: 26px;
-  --space-lg: 42px;
-  --space-xl: 68px;
-  --space-2xl: 110px;
-  --space-3xl: 178px;
+  /* Fluid Spacing Scale */
+  --space-xs: clamp(6px, 1vw, 10px);
+  --space-sm: clamp(10px, 1.5vw, 16px);
+  --space-md: clamp(16px, 2.5vw, 24px);
+  --space-lg: clamp(22px, 3.5vw, 36px);
+  --space-xl: clamp(32px, 5vw, 56px);
+  --space-2xl: clamp(48px, 7vw, 88px);
+  --space-3xl: clamp(64px, 10vw, 120px);
   --phi: 1.618;
 
-  --max-width: 1618px;
-  --standard-width: 1000px;
-  --narrow-width: 618px;
+  --max-width: 1440px;
+  --standard-width: 1040px;
+  --narrow-width: 640px;
+  --nav-height: 54px;
 
-  --hero: 7rem;
-  --h1: 4.25rem;
-  --h2: 2.625rem;
-  --h3: 1.625rem;
-  --body-lg: 1.3125rem;
-  --body: 1rem;
-  --small: 0.625rem;
+  /* Fluid Responsive Typography */
+  --hero: clamp(2.2rem, 5.5vw + 0.5rem, 4.25rem);
+  --h1: clamp(1.75rem, 3.8vw + 0.5rem, 2.75rem);
+  --h2: clamp(1.35rem, 2.4vw + 0.4rem, 2rem);
+  --h3: clamp(1.1rem, 1.6vw + 0.3rem, 1.45rem);
+  --body-lg: clamp(1rem, 1.2vw + 0.2rem, 1.15rem);
+  --body: 0.95rem;
+  --small: 0.75rem;
 
-  --transition-fast: 0.3s;
-  --transition-med: 0.618s;
+  --transition-fast: 0.25s;
+  --transition-med: 0.45s;
   --easing: cubic-bezier(0.25, 0.46, 0.45, 0.94);
 }
+
 

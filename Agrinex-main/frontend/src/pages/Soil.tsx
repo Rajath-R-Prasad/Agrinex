@@ -22,10 +22,10 @@ const SOIL_TYPE_PRESETS: Record<string, SoilBenchmark> = {
 };
 
 const SOIL_FEELS = [
-  { id: 'dry and crumbly', label: '🪨 Dry and Crumbly', desc: 'Moisture <25%, high water deficit' },
-  { id: 'slightly damp', label: '🌿 Slightly Damp', desc: 'Moisture 40-55%, optimal root environment' },
-  { id: 'wet and muddy', label: '💧 Wet and Muddy', desc: 'Moisture >70%, saturated topsoil' },
-  { id: 'compacted', label: '⛓️ Compacted / Hard', desc: 'Aeration-stressed, crusted surface' },
+  { id: 'dry and crumbly', label: '🪨 Dry & Crumbly', desc: 'Moisture <25%' },
+  { id: 'slightly damp', label: '🌿 Slightly Damp', desc: 'Moisture 40-55%' },
+  { id: 'wet and muddy', label: '💧 Wet & Muddy', desc: 'Moisture >70%' },
+  { id: 'compacted', label: '⛓️ Compacted', desc: 'Aeration-stressed' },
 ];
 
 const Soil: React.FC = () => {
@@ -45,7 +45,6 @@ const Soil: React.FC = () => {
   const [cropResult, setCropResult] = useState<any | null>(null);
   const [irrigationResult, setIrrigationResult] = useState<any | null>(null);
 
-  // When soil type changes, optionally load presets
   const handleSoilTypeChange = (newType: string) => {
     setSelectedSoilType(newType);
     const preset = SOIL_TYPE_PRESETS[newType];
@@ -56,13 +55,11 @@ const Soil: React.FC = () => {
     }
   };
 
-  // Run crop recommendation and irrigation prediction via POST
   const runPrediction = async () => {
     setLoading(true);
     try {
       const coords = getUserCoordinates();
-      
-      // POST request to advanced crop prediction endpoint
+
       const cropRes = await api.post('/api/v1/crop/predict-advanced', {
         soil_type: selectedSoilType,
         soil_feel: selectedSoilFeel,
@@ -75,7 +72,6 @@ const Soil: React.FC = () => {
         lon: coords.lon,
       });
 
-      // POST request to irrigation recommendation endpoint
       const irriRes = await api.post('/api/v1/irrigation/recommend', {
         soil_feel: selectedSoilFeel,
         application_rate: 5.0,
@@ -85,20 +81,15 @@ const Soil: React.FC = () => {
         lon: coords.lon,
       });
 
-      if (cropRes) {
-        setCropResult(cropRes);
-      }
-      if (irriRes) {
-        setIrrigationResult(irriRes);
-      }
+      if (cropRes) setCropResult(cropRes);
+      if (irriRes) setIrrigationResult(irriRes);
     } catch (err) {
-      console.error('Prediction failed:', err);
+      console.error('Soil prediction failed:', err);
     } finally {
       setLoading(false);
     }
   };
 
-  // Auto-run on initial mount with farm defaults
   useEffect(() => {
     if (selectedFarm?.soilType && SOIL_TYPE_PRESETS[selectedFarm.soilType]) {
       setSelectedSoilType(selectedFarm.soilType);
@@ -113,7 +104,6 @@ const Soil: React.FC = () => {
     runPrediction();
   }, [selectedFarm?.id]);
 
-  // Derived soil layer graphic data based on soil type
   const soilLayerColor = useMemo(() => {
     if (selectedSoilType.includes('Red')) return '#991b1b';
     if (selectedSoilType.includes('Black')) return '#1e293b';
@@ -129,43 +119,65 @@ const Soil: React.FC = () => {
   return (
     <>
       <DynamicBackground />
-      <section className="section" style={{ paddingTop: 'var(--space-xl)', position: 'relative', zIndex: 10 }}>
+      <section className="section" style={{ position: 'relative', zIndex: 10 }}>
         <div className="container">
           {/* Header */}
-          <div style={{ marginBottom: 'var(--space-xl)' }}>
-            <div className="pill" style={{ marginBottom: 'var(--space-sm)', background: 'rgba(16, 185, 129, 0.15)', borderColor: 'var(--green-primary)', color: 'var(--green-light)' }}>
+          <div style={{ marginBottom: 'var(--space-lg)' }}>
+            <div
+              className="pill"
+              style={{
+                marginBottom: 'var(--space-xs)',
+                background: 'rgba(16, 185, 129, 0.15)',
+                borderColor: 'var(--green-primary)',
+                color: 'var(--green-light)',
+              }}
+            >
               🌱 Soil Diagnostic Studio & Crop Predictor
             </div>
-            <h1 style={{ fontSize: 'var(--h1)', marginBottom: 'var(--space-sm)', color: 'var(--text-primary)' }}>
-              Soil Health & Rule-Based Crop Prediction
+            <h1 style={{ fontSize: 'var(--h1)', marginBottom: 'var(--space-xs)', color: 'var(--text-primary)' }}>
+              Soil Health & Machine Learning Crop Prediction
             </h1>
-            <p style={{ fontSize: 'var(--body-lg)', color: 'var(--text-secondary)', maxWidth: 'var(--narrow-width)', lineHeight: 1.6 }}>
-              Input your N-P-K nutrient values, soil texture, and tactile soil feel. Our backend evaluates benchmark agronomic rules for <strong>Red, Black, Alluvial, Loamy, Laterite, and Clay soils</strong> and predicts the best yielding crops with precision irrigation guidance.
+            <p style={{ fontSize: 'var(--body-lg)', color: 'var(--text-secondary)', maxWidth: 'var(--narrow-width)' }}>
+              Input your N-P-K nutrient values, soil texture, and tactile feel. Agrinex evaluates agronomic rules to predict high-yield crops with precision irrigation guidance.
             </p>
           </div>
 
-          {/* Farm Overview Banner */}
+          {/* Farm Profile Banner */}
           {selectedFarm && (
-            <div className="card-apple" style={{ marginBottom: 'var(--space-lg)', background: 'rgba(2, 44, 34, 0.6)', backdropFilter: 'blur(12px)', border: '1px solid rgba(16, 185, 129, 0.25)' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 'var(--space-md)' }}>
+            <div
+              className="card-apple"
+              style={{
+                marginBottom: 'var(--space-lg)',
+                background: 'rgba(2, 44, 34, 0.6)',
+                backdropFilter: 'blur(12px)',
+                WebkitBackdropFilter: 'blur(12px)',
+                border: '1px solid rgba(16, 185, 129, 0.25)',
+                padding: 'clamp(16px, 3vw, 24px)',
+              }}
+            >
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '14px' }}>
                 <div>
-                  <div style={{ fontSize: 'var(--body)', color: 'var(--text-tertiary)', marginBottom: '4px' }}>Active Farm Profile</div>
-                  <div style={{ fontSize: 'var(--h2)', fontWeight: 700, color: 'var(--text-primary)' }}>
+                  <div style={{ fontSize: '12px', color: 'var(--text-tertiary)', marginBottom: '2px' }}>Active Farm</div>
+                  <div style={{ fontSize: 'var(--h2)', fontWeight: 800, color: 'var(--text-primary)' }}>
                     {selectedFarm.name}
                   </div>
-                  <div style={{ fontSize: 'var(--body)', color: 'var(--text-secondary)', marginTop: '4px' }}>
-                    📍 {selectedFarm.location} · 📐 {selectedFarm.area || 5} acres · Coordinates: {typeof selectedFarm.coordinates === 'object' && selectedFarm.coordinates !== null ? `${(selectedFarm.coordinates as any).lat}, ${(selectedFarm.coordinates as any).lon}` : (selectedFarm.coordinates || 'Auto-Detected')}
+                  <div style={{ fontSize: '13px', color: 'var(--text-secondary)', marginTop: '4px' }}>
+                    📍 {selectedFarm.location} · 📐 {selectedFarm.area || 5} acres
                   </div>
                 </div>
-                <div style={{
-                  padding: '12px 20px',
-                  borderRadius: 'var(--space-xs)',
-                  background: 'rgba(16, 185, 129, 0.2)',
-                  border: '1px solid var(--green-primary)',
-                  textAlign: 'right',
-                }}>
-                  <div style={{ fontSize: '11px', color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Soil Health Score</div>
-                  <div style={{ fontSize: '24px', fontWeight: 800, color: 'var(--green-light)' }}>
+                <div
+                  style={{
+                    padding: '10px 18px',
+                    borderRadius: '12px',
+                    background: 'rgba(16, 185, 129, 0.2)',
+                    border: '1px solid var(--green-primary)',
+                    textAlign: 'center',
+                  }}
+                >
+                  <div style={{ fontSize: '11px', color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                    Soil Health Score
+                  </div>
+                  <div style={{ fontSize: 'clamp(20px, 3vw, 26px)', fontWeight: 800, color: 'var(--green-light)' }}>
                     {soilEval?.health_score || 82} / 100
                   </div>
                 </div>
@@ -174,15 +186,21 @@ const Soil: React.FC = () => {
           )}
 
           {/* MAIN GRID: Input Form & Soil Diagnostics */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))', gap: 'var(--space-xl)', marginBottom: 'var(--space-xl)' }}>
-            
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 320px), 1fr))',
+              gap: 'clamp(16px, 3vw, 28px)',
+              marginBottom: 'var(--space-xl)',
+            }}
+          >
             {/* INPUT PANEL */}
-            <div className="card-apple" style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)' }}>
-              <h3 style={{ fontSize: 'var(--h3)', fontWeight: 700, color: 'var(--text-primary)', marginBottom: 'var(--space-md)', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <span>🧪</span> Enter Soil & Nutrient Parameters
+            <div className="card-apple" style={{ background: 'var(--bg-card)' }}>
+              <h3 style={{ fontSize: 'var(--h3)', fontWeight: 700, color: 'var(--text-primary)', marginBottom: 'var(--space-sm)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span>🧪</span> Soil & Nutrient Parameters
               </h3>
 
-              <div style={{ display: 'grid', gap: 'var(--space-md)' }}>
+              <div style={{ display: 'grid', gap: '14px' }}>
                 {/* Soil Type Selector */}
                 <div>
                   <label style={{ display: 'block', fontSize: '13px', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '6px' }}>
@@ -193,8 +211,8 @@ const Soil: React.FC = () => {
                     onChange={(e) => handleSoilTypeChange(e.target.value)}
                     style={{
                       width: '100%',
-                      padding: '10px 14px',
-                      borderRadius: 'var(--space-xs)',
+                      padding: '10px 12px',
+                      borderRadius: '10px',
                       background: 'var(--bg-tertiary)',
                       border: '1px solid var(--border-color)',
                       color: 'var(--text-primary)',
@@ -206,7 +224,7 @@ const Soil: React.FC = () => {
                       <option key={st} value={st}>{st}</option>
                     ))}
                   </select>
-                  <div style={{ fontSize: '12px', color: 'var(--text-tertiary)', marginTop: '4px', fontStyle: 'italic' }}>
+                  <div style={{ fontSize: '11px', color: 'var(--text-tertiary)', marginTop: '4px', fontStyle: 'italic' }}>
                     {SOIL_TYPE_PRESETS[selectedSoilType]?.desc}
                   </div>
                 </div>
@@ -214,17 +232,17 @@ const Soil: React.FC = () => {
                 {/* Soil Feel Selector */}
                 <div>
                   <label style={{ display: 'block', fontSize: '13px', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '6px' }}>
-                    2. How does the soil feel in hand?
+                    2. Soil Moisture & Feel
                   </label>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 130px), 1fr))', gap: '8px' }}>
                     {SOIL_FEELS.map((feel) => (
                       <button
                         key={feel.id}
                         type="button"
                         onClick={() => setSelectedSoilFeel(feel.id)}
                         style={{
-                          padding: '8px 12px',
-                          borderRadius: '6px',
+                          padding: '10px 12px',
+                          borderRadius: '8px',
                           border: selectedSoilFeel === feel.id ? '2px solid var(--green-primary)' : '1px solid var(--border-color)',
                           background: selectedSoilFeel === feel.id ? 'rgba(16, 185, 129, 0.15)' : 'var(--bg-tertiary)',
                           color: selectedSoilFeel === feel.id ? 'var(--green-light)' : 'var(--text-secondary)',
@@ -235,15 +253,16 @@ const Soil: React.FC = () => {
                           transition: 'all 0.2s ease',
                         }}
                       >
-                        {feel.label}
+                        <div>{feel.label}</div>
+                        <div style={{ fontSize: '10px', color: 'var(--text-tertiary)', marginTop: '2px' }}>{feel.desc}</div>
                       </button>
                     ))}
                   </div>
                 </div>
 
-                {/* N-P-K Sliders and Numeric Inputs */}
-                <div style={{ background: 'var(--bg-tertiary)', padding: '14px', borderRadius: 'var(--space-xs)', border: '1px solid var(--border-color)' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                {/* N-P-K Sliders */}
+                <div style={{ background: 'var(--bg-tertiary)', padding: '12px', borderRadius: '10px', border: '1px solid var(--border-color)' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px', flexWrap: 'wrap', gap: '6px' }}>
                     <span style={{ fontSize: '13px', fontWeight: 700, color: 'var(--text-primary)' }}>
                       3. N-P-K Values (kg/ha)
                     </span>
@@ -255,17 +274,17 @@ const Soil: React.FC = () => {
                         background: 'transparent',
                         border: '1px solid var(--green-primary)',
                         color: 'var(--green-light)',
-                        borderRadius: '4px',
+                        borderRadius: '6px',
                         fontSize: '11px',
                         cursor: 'pointer',
                       }}
                     >
-                      Reset to Benchmark
+                      Reset Benchmark
                     </button>
                   </div>
 
                   {/* Nitrogen */}
-                  <div style={{ marginBottom: '12px' }}>
+                  <div style={{ marginBottom: '10px' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', marginBottom: '4px' }}>
                       <span style={{ color: 'var(--text-secondary)' }}>Nitrogen (N):</span>
                       <span style={{ fontWeight: 700, color: '#38bdf8' }}>{nitrogen} kg/ha</span>
@@ -281,7 +300,7 @@ const Soil: React.FC = () => {
                   </div>
 
                   {/* Phosphorus */}
-                  <div style={{ marginBottom: '12px' }}>
+                  <div style={{ marginBottom: '10px' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', marginBottom: '4px' }}>
                       <span style={{ color: 'var(--text-secondary)' }}>Phosphorus (P):</span>
                       <span style={{ fontWeight: 700, color: '#fb923c' }}>{phosphorus} kg/ha</span>
@@ -314,7 +333,7 @@ const Soil: React.FC = () => {
                 </div>
 
                 {/* Region & Location Fields */}
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 120px), 1fr))', gap: '8px' }}>
                   <div>
                     <label style={{ display: 'block', fontSize: '12px', color: 'var(--text-tertiary)', marginBottom: '4px' }}>State</label>
                     <input
@@ -323,10 +342,10 @@ const Soil: React.FC = () => {
                       onChange={(e) => setStateName(e.target.value)}
                       style={{
                         width: '100%',
-                        padding: '8px 12px',
+                        padding: '8px 10px',
                         background: 'var(--bg-tertiary)',
                         border: '1px solid var(--border-color)',
-                        borderRadius: '6px',
+                        borderRadius: '8px',
                         color: 'var(--text-primary)',
                         fontSize: '13px',
                       }}
@@ -340,10 +359,10 @@ const Soil: React.FC = () => {
                       onChange={(e) => setDistrictName(e.target.value)}
                       style={{
                         width: '100%',
-                        padding: '8px 12px',
+                        padding: '8px 10px',
                         background: 'var(--bg-tertiary)',
                         border: '1px solid var(--border-color)',
-                        borderRadius: '6px',
+                        borderRadius: '8px',
                         color: 'var(--text-primary)',
                         fontSize: '13px',
                       }}
@@ -361,7 +380,7 @@ const Soil: React.FC = () => {
                     width: '100%',
                     justifyContent: 'center',
                     padding: '12px',
-                    fontSize: '15px',
+                    fontSize: '14px',
                     fontWeight: 700,
                   }}
                 >
@@ -371,27 +390,28 @@ const Soil: React.FC = () => {
             </div>
 
             {/* RULE-BASED SOIL EVALUATION RESULTS */}
-            <div style={{ display: 'grid', gap: 'var(--space-md)' }}>
-              
+            <div style={{ display: 'grid', gap: '14px' }}>
               {/* NPK Status Badges */}
-              <div className="card-apple" style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)' }}>
-                <h3 style={{ fontSize: 'var(--h3)', fontWeight: 700, color: 'var(--text-primary)', marginBottom: 'var(--space-md)', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <span>📋</span> Rule-Based Soil Nutrient Analysis
+              <div className="card-apple">
+                <h3 style={{ fontSize: 'var(--h3)', fontWeight: 700, color: 'var(--text-primary)', marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span>📋</span> Nutrient Health Analysis
                 </h3>
 
-                <div style={{ display: 'grid', gap: '10px' }}>
-                  {/* Nitrogen Card */}
-                  <div style={{ padding: '12px', borderRadius: '8px', background: 'var(--bg-tertiary)', border: '1px solid var(--border-color)' }}>
+                <div style={{ display: 'grid', gap: '8px' }}>
+                  {/* Nitrogen */}
+                  <div style={{ padding: '10px 12px', borderRadius: '8px', background: 'var(--bg-tertiary)', border: '1px solid var(--border-color)' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
-                      <span style={{ fontWeight: 700, color: 'var(--text-primary)', fontSize: '14px' }}>Nitrogen (N)</span>
-                      <span style={{
-                        padding: '2px 8px',
-                        borderRadius: '4px',
-                        fontSize: '11px',
-                        fontWeight: 700,
-                        background: soilEval?.nitrogen.rating === 'optimal' ? 'rgba(16, 185, 129, 0.2)' : soilEval?.nitrogen.rating === 'low' ? 'rgba(239, 68, 68, 0.2)' : 'rgba(245, 158, 11, 0.2)',
-                        color: soilEval?.nitrogen.rating === 'optimal' ? 'var(--green-light)' : soilEval?.nitrogen.rating === 'low' ? '#f87171' : '#fbbf24',
-                      }}>
+                      <span style={{ fontWeight: 700, color: 'var(--text-primary)', fontSize: '13px' }}>Nitrogen (N)</span>
+                      <span
+                        style={{
+                          padding: '2px 8px',
+                          borderRadius: '4px',
+                          fontSize: '11px',
+                          fontWeight: 700,
+                          background: soilEval?.nitrogen.rating === 'optimal' ? 'rgba(16, 185, 129, 0.2)' : soilEval?.nitrogen.rating === 'low' ? 'rgba(239, 68, 68, 0.2)' : 'rgba(245, 158, 11, 0.2)',
+                          color: soilEval?.nitrogen.rating === 'optimal' ? 'var(--green-light)' : soilEval?.nitrogen.rating === 'low' ? '#f87171' : '#fbbf24',
+                        }}
+                      >
                         {soilEval?.nitrogen.status || 'Optimal'}
                       </span>
                     </div>
@@ -400,18 +420,20 @@ const Soil: React.FC = () => {
                     </div>
                   </div>
 
-                  {/* Phosphorus Card */}
-                  <div style={{ padding: '12px', borderRadius: '8px', background: 'var(--bg-tertiary)', border: '1px solid var(--border-color)' }}>
+                  {/* Phosphorus */}
+                  <div style={{ padding: '10px 12px', borderRadius: '8px', background: 'var(--bg-tertiary)', border: '1px solid var(--border-color)' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
-                      <span style={{ fontWeight: 700, color: 'var(--text-primary)', fontSize: '14px' }}>Phosphorus (P)</span>
-                      <span style={{
-                        padding: '2px 8px',
-                        borderRadius: '4px',
-                        fontSize: '11px',
-                        fontWeight: 700,
-                        background: soilEval?.phosphorus.rating === 'optimal' ? 'rgba(16, 185, 129, 0.2)' : soilEval?.phosphorus.rating === 'low' ? 'rgba(239, 68, 68, 0.2)' : 'rgba(245, 158, 11, 0.2)',
-                        color: soilEval?.phosphorus.rating === 'optimal' ? 'var(--green-light)' : soilEval?.phosphorus.rating === 'low' ? '#f87171' : '#fbbf24',
-                      }}>
+                      <span style={{ fontWeight: 700, color: 'var(--text-primary)', fontSize: '13px' }}>Phosphorus (P)</span>
+                      <span
+                        style={{
+                          padding: '2px 8px',
+                          borderRadius: '4px',
+                          fontSize: '11px',
+                          fontWeight: 700,
+                          background: soilEval?.phosphorus.rating === 'optimal' ? 'rgba(16, 185, 129, 0.2)' : soilEval?.phosphorus.rating === 'low' ? 'rgba(239, 68, 68, 0.2)' : 'rgba(245, 158, 11, 0.2)',
+                          color: soilEval?.phosphorus.rating === 'optimal' ? 'var(--green-light)' : soilEval?.phosphorus.rating === 'low' ? '#f87171' : '#fbbf24',
+                        }}
+                      >
                         {soilEval?.phosphorus.status || 'Optimal'}
                       </span>
                     </div>
@@ -420,31 +442,33 @@ const Soil: React.FC = () => {
                     </div>
                   </div>
 
-                  {/* Potassium Card */}
-                  <div style={{ padding: '12px', borderRadius: '8px', background: 'var(--bg-tertiary)', border: '1px solid var(--border-color)' }}>
+                  {/* Potassium */}
+                  <div style={{ padding: '10px 12px', borderRadius: '8px', background: 'var(--bg-tertiary)', border: '1px solid var(--border-color)' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
-                      <span style={{ fontWeight: 700, color: 'var(--text-primary)', fontSize: '14px' }}>Potassium (K)</span>
-                      <span style={{
-                        padding: '2px 8px',
-                        borderRadius: '4px',
-                        fontSize: '11px',
-                        fontWeight: 700,
-                        background: soilEval?.potassium.rating === 'optimal' ? 'rgba(16, 185, 129, 0.2)' : soilEval?.potassium.rating === 'low' ? 'rgba(239, 68, 68, 0.2)' : 'rgba(245, 158, 11, 0.2)',
-                        color: soilEval?.potassium.rating === 'optimal' ? 'var(--green-light)' : soilEval?.potassium.rating === 'low' ? '#f87171' : '#fbbf24',
-                      }}>
+                      <span style={{ fontWeight: 700, color: 'var(--text-primary)', fontSize: '13px' }}>Potassium (K)</span>
+                      <span
+                        style={{
+                          padding: '2px 8px',
+                          borderRadius: '4px',
+                          fontSize: '11px',
+                          fontWeight: 700,
+                          background: soilEval?.potassium.rating === 'optimal' ? 'rgba(16, 185, 129, 0.2)' : soilEval?.potassium.rating === 'low' ? 'rgba(239, 68, 68, 0.2)' : 'rgba(245, 158, 11, 0.2)',
+                          color: soilEval?.potassium.rating === 'optimal' ? 'var(--green-light)' : soilEval?.potassium.rating === 'low' ? '#f87171' : '#fbbf24',
+                        }}
+                      >
                         {soilEval?.potassium.status || 'Optimal'}
                       </span>
                     </div>
                     <div style={{ fontSize: '12px', color: 'var(--text-secondary)', lineHeight: 1.4 }}>
-                      {soilEval?.potassium.advice || 'Potassium ensures drought tolerance.'}
+                      {soilEval?.potassium.advice || 'Potassium ensures disease and drought tolerance.'}
                     </div>
                   </div>
                 </div>
               </div>
 
-              {/* Amendments & Soil Profile Graphic */}
-              <div className="card-apple" style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+              {/* Amendments & Cross-section */}
+              <div className="card-apple">
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px', flexWrap: 'wrap', gap: '6px' }}>
                   <span style={{ fontSize: '13px', fontWeight: 700, color: 'var(--text-primary)' }}>
                     🌾 Soil Amendments & Structure
                   </span>
@@ -453,21 +477,23 @@ const Soil: React.FC = () => {
                   </span>
                 </div>
                 <div style={{ fontSize: '12px', color: 'var(--text-secondary)', lineHeight: 1.5, marginBottom: '12px' }}>
-                  {soilEval?.soil_amendments || 'Apply compost to maintain organic carbon.'}
+                  {soilEval?.soil_amendments || 'Apply compost to maintain organic carbon and water-holding capacity.'}
                 </div>
 
-                {/* Soil Cross-section */}
-                <div style={{
-                  height: '42px',
-                  borderRadius: '6px',
-                  overflow: 'hidden',
-                  display: 'flex',
-                  border: '1px solid var(--border-color)',
-                }}>
-                  <div style={{ flex: 1, background: soilLayerColor, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: '11px', fontWeight: 700 }}>
+                {/* Cross-section bar */}
+                <div
+                  style={{
+                    height: '38px',
+                    borderRadius: '8px',
+                    overflow: 'hidden',
+                    display: 'flex',
+                    border: '1px solid var(--border-color)',
+                  }}
+                >
+                  <div style={{ flex: 1, background: soilLayerColor, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: '11px', fontWeight: 700, padding: '0 4px', textAlign: 'center' }}>
                     Topsoil (0-15cm) · {selectedSoilType}
                   </div>
-                  <div style={{ flex: 1, background: '#3b2f2f', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: '11px', fontWeight: 700 }}>
+                  <div style={{ flex: 1, background: '#3b2f2f', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: '11px', fontWeight: 700, padding: '0 4px', textAlign: 'center' }}>
                     Subsoil (15-45cm)
                   </div>
                 </div>
@@ -475,22 +501,27 @@ const Soil: React.FC = () => {
 
               {/* Irrigation Advisory Card */}
               {irrigationResult && (
-                <div className="card-apple" style={{
-                  background: irrigationResult.irrigate ? 'rgba(16, 185, 129, 0.12)' : 'rgba(245, 158, 11, 0.12)',
-                  border: irrigationResult.irrigate ? '1px solid var(--green-primary)' : '1px solid #f59e0b',
-                }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
-                    <span style={{ fontSize: '14px', fontWeight: 700, color: 'var(--text-primary)' }}>
-                      💧 Irrigation Decision (Based on Soil Feel)
+                <div
+                  className="card-apple"
+                  style={{
+                    background: irrigationResult.irrigate ? 'rgba(16, 185, 129, 0.12)' : 'rgba(245, 158, 11, 0.12)',
+                    borderColor: irrigationResult.irrigate ? 'var(--green-primary)' : '#f59e0b',
+                  }}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px', flexWrap: 'wrap', gap: '8px' }}>
+                    <span style={{ fontSize: '13px', fontWeight: 700, color: 'var(--text-primary)' }}>
+                      💧 Soil-Based Irrigation Advisory
                     </span>
-                    <span style={{
-                      padding: '3px 10px',
-                      borderRadius: '999px',
-                      fontSize: '11px',
-                      fontWeight: 800,
-                      background: irrigationResult.irrigate ? 'var(--green-primary)' : '#f59e0b',
-                      color: '#ffffff',
-                    }}>
+                    <span
+                      style={{
+                        padding: '3px 10px',
+                        borderRadius: '999px',
+                        fontSize: '11px',
+                        fontWeight: 800,
+                        background: irrigationResult.irrigate ? 'var(--green-primary)' : '#f59e0b',
+                        color: '#ffffff',
+                      }}
+                    >
                       {irrigationResult.irrigate ? 'IRRIGATE NOW' : 'HOLD IRRIGATION'}
                     </span>
                   </div>
@@ -498,10 +529,9 @@ const Soil: React.FC = () => {
                     {irrigationResult.reason_weather}
                   </div>
                   {irrigationResult.irrigate && (
-                    <div style={{ display: 'flex', gap: '16px', marginTop: '8px', fontSize: '12px', color: 'var(--green-light)', fontWeight: 600 }}>
+                    <div style={{ display: 'flex', gap: '14px', marginTop: '8px', fontSize: '12px', color: 'var(--green-light)', fontWeight: 600, flexWrap: 'wrap' }}>
                       <span>Water: {irrigationResult.water_mm} mm</span>
                       <span>Duration: {irrigationResult.duration_hours} hrs</span>
-                      <span>Rate: {irrigationResult.application_rate_mm_per_h} mm/h</span>
                     </div>
                   )}
                 </div>
@@ -510,14 +540,14 @@ const Soil: React.FC = () => {
           </div>
 
           {/* PREDICTED SUITABLE CROPS SECTION */}
-          <div className="card-apple" style={{ marginBottom: 'var(--space-xl)', background: 'var(--bg-card)', border: '1px solid var(--border-color)' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-md)', flexWrap: 'wrap', gap: '8px' }}>
+          <div className="card-apple" style={{ marginBottom: 'var(--space-xl)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-md)', flexWrap: 'wrap', gap: '10px' }}>
               <div>
                 <h2 style={{ fontSize: 'var(--h2)', fontWeight: 700, color: 'var(--text-primary)' }}>
-                  🌾 Recommended Crops for {selectedSoilType} in {districtName}, {stateName}
+                  🌾 Recommended Crops for {selectedSoilType}
                 </h2>
-                <p style={{ fontSize: '13px', color: 'var(--text-tertiary)', marginTop: '2px' }}>
-                  Ranked by combined agronomic suitability, N-P-K fit, local weather, and machine learning models.
+                <p style={{ fontSize: '12px', color: 'var(--text-tertiary)', marginTop: '2px' }}>
+                  Ranked by combined agronomic suitability, N-P-K nutrient balance, and local weather patterns.
                 </p>
               </div>
               <div className="pill" style={{ background: 'rgba(16, 185, 129, 0.15)', borderColor: 'var(--green-primary)', color: 'var(--green-light)' }}>
@@ -525,13 +555,19 @@ const Soil: React.FC = () => {
               </div>
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 'var(--space-md)' }}>
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 250px), 1fr))',
+                gap: '12px',
+              }}
+            >
               {recommendedCrops.map((cropItem: any, idx: number) => (
                 <div
                   key={cropItem.crop}
                   style={{
-                    padding: 'var(--space-md)',
-                    borderRadius: 'var(--space-xs)',
+                    padding: '14px',
+                    borderRadius: '12px',
                     background: 'var(--bg-tertiary)',
                     border: idx === 0 ? '2px solid var(--green-primary)' : '1px solid var(--border-color)',
                     display: 'flex',
@@ -542,57 +578,63 @@ const Soil: React.FC = () => {
                   }}
                 >
                   {idx === 0 && (
-                    <div style={{
-                      position: 'absolute',
-                      top: 0,
-                      right: 0,
-                      background: 'var(--green-primary)',
-                      color: '#fff',
-                      fontSize: '10px',
-                      fontWeight: 800,
-                      padding: '2px 8px',
-                      borderBottomLeftRadius: '6px',
-                    }}>
+                    <div
+                      style={{
+                        position: 'absolute',
+                        top: 0,
+                        right: 0,
+                        background: 'var(--green-primary)',
+                        color: '#fff',
+                        fontSize: '9px',
+                        fontWeight: 800,
+                        padding: '2px 8px',
+                        borderBottomLeftRadius: '6px',
+                      }}
+                    >
                       TOP MATCH
                     </div>
                   )}
 
                   <div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '8px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '6px' }}>
                       <div>
-                        <div style={{ fontSize: '16px', fontWeight: 800, color: 'var(--text-primary)' }}>
+                        <div style={{ fontSize: '15px', fontWeight: 800, color: 'var(--text-primary)' }}>
                           {cropItem.crop}
                         </div>
                         <div style={{ fontSize: '11px', color: 'var(--text-tertiary)' }}>
                           {cropItem.category}
                         </div>
                       </div>
-                      <div style={{
-                        padding: '4px 10px',
-                        borderRadius: '6px',
-                        background: cropItem.suitability >= 80 ? 'rgba(16, 185, 129, 0.2)' : 'rgba(59, 130, 246, 0.2)',
-                        color: cropItem.suitability >= 80 ? 'var(--green-light)' : '#60a5fa',
-                        fontSize: '13px',
-                        fontWeight: 800,
-                      }}>
+                      <div
+                        style={{
+                          padding: '3px 8px',
+                          borderRadius: '6px',
+                          background: cropItem.suitability >= 80 ? 'rgba(16, 185, 129, 0.2)' : 'rgba(59, 130, 246, 0.2)',
+                          color: cropItem.suitability >= 80 ? 'var(--green-light)' : '#60a5fa',
+                          fontSize: '12px',
+                          fontWeight: 800,
+                        }}
+                      >
                         {cropItem.suitability}% Fit
                       </div>
                     </div>
 
-                    <div style={{ fontSize: '12px', color: 'var(--text-secondary)', lineHeight: 1.5, marginBottom: '12px' }}>
+                    <div style={{ fontSize: '12px', color: 'var(--text-secondary)', lineHeight: 1.4, marginBottom: '10px' }}>
                       {cropItem.reason}
                     </div>
                   </div>
 
-                  <div style={{
-                    paddingTop: '8px',
-                    borderTop: '1px solid rgba(255,255,255,0.06)',
-                    display: 'grid',
-                    gridTemplateColumns: '1fr 1fr',
-                    gap: '4px',
-                    fontSize: '11px',
-                    color: 'var(--text-tertiary)'
-                  }}>
+                  <div
+                    style={{
+                      paddingTop: '8px',
+                      borderTop: '1px solid rgba(255,255,255,0.06)',
+                      display: 'grid',
+                      gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 90px), 1fr))',
+                      gap: '4px',
+                      fontSize: '11px',
+                      color: 'var(--text-tertiary)',
+                    }}
+                  >
                     <div>💧 Water: <strong style={{ color: 'var(--text-primary)' }}>{cropItem.water_requirement?.split(' ')[0] || 'Moderate'}</strong></div>
                     <div>⏳ Duration: <strong style={{ color: 'var(--text-primary)' }}>{cropItem.growth_duration || '110d'}</strong></div>
                     <div style={{ gridColumn: 'span 2' }}>📊 Yield: <strong style={{ color: 'var(--green-light)' }}>{cropItem.expected_yield || '3.5 t/ha'}</strong></div>
@@ -601,7 +643,6 @@ const Soil: React.FC = () => {
               ))}
             </div>
           </div>
-
         </div>
       </section>
     </>

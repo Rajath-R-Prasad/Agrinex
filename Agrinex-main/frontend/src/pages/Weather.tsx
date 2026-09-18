@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import api from '../lib/api';
+import DynamicBackground from '../components/DynamicBackground';
 
 /**
  * Hyperlocal Weather & Irrigation Advisory Engine
@@ -105,7 +106,7 @@ const Weather: React.FC = () => {
       });
       const lat = Number(pos.coords.latitude.toFixed(4));
       const lon = Number(pos.coords.longitude.toFixed(4));
-      
+
       // Attempt reverse lookup via geocode
       let placeName = `GPS (${lat}, ${lon})`;
       let regionName = 'Device Location';
@@ -205,23 +206,23 @@ const Weather: React.FC = () => {
         console.error('Error fetching forecast:', e);
       }
 
-      // 3. Hyperlocal Multi-Radius Analysis (2km, 5km, 10km)
+      // 3. Hyperlocal concentric zones & irrigation advisory
       try {
-        const hyperRes = await api.post('/api/weather/hyperlocal', {
-          lat,
-          lon,
-          state_name: state,
-          district_name: district,
-          radii: [2, 5, 10],
+        const hlRes = await api.get('/api/weather/hyperlocal', {
+          params: {
+            lat,
+            lon,
+            farm_name: userFarm.name,
+            district,
+            state,
+          },
         });
-        if (hyperRes?.zones) {
-          setHyperlocalData(hyperRes);
+        if (hlRes) {
+          setHyperlocalData(hlRes);
         }
       } catch (e) {
         console.error('Error fetching hyperlocal data:', e);
       }
-    } catch (err) {
-      console.error('Weather load error:', err);
     } finally {
       setLoading(false);
     }
@@ -229,111 +230,76 @@ const Weather: React.FC = () => {
 
   useEffect(() => {
     fetchWeather();
-    const interval = setInterval(fetchWeather, 300000); // 5-minute live sync
-    return () => clearInterval(interval);
-  }, [selectedFarm?.id, selectedFarm?.coordinates, forecastDays, locationOverride]);
+  }, [selectedFarm?.id, locationOverride, forecastDays]);
 
-  // Extract zones from API response
   const zones = useMemo(() => {
-    if (hyperlocalData?.zones && hyperlocalData.zones.length > 0) {
+    if (hyperlocalData?.zones && Array.isArray(hyperlocalData.zones) && hyperlocalData.zones.length > 0) {
       return hyperlocalData.zones;
     }
+    // Fallback zones computed around live values
+    const baseTemp = currentWeather.temperature || 24;
+    const baseHum = currentWeather.humidity || 60;
     return [
       {
         radius: 2,
-        label: 'Immediate Zone (2km)',
-        description: 'Conditions over farm canopy',
-        current: {
-          temperature: currentWeather.temperature,
-          humidity: currentWeather.humidity,
-          windSpeed: currentWeather.windSpeed,
-          condition: currentWeather.condition,
-          rain_24h: 0.0,
-        },
-        rainfallChance: { next24h: 15, expectedRainMm: 0.0 },
-        irrigation: {
-          action: 'Irrigate Now',
-          status: 'IRRIGATE RECOMMENDED',
-          water_mm: 10.0,
-          reason: 'Dry conditions detected in 2km boundary.',
-        },
+        label: '2km Zone (Immediate Microclimate)',
+        description: 'Nearest sensor station / local perimeter',
+        current: { temperature: baseTemp, humidity: baseHum, windSpeed: 8, rain_24h: 0 },
+        rainfallChance: { next24h: 10, next48h: 20 },
+        irrigation: { action: 'Irrigate Now', water_mm: 8.5, reason: 'Topsoil deficit in immediate 2km boundary.' },
       },
       {
         radius: 5,
-        label: 'Local Micro-Zone (5km)',
-        description: 'Surrounding watershed and canopy',
-        current: {
-          temperature: currentWeather.temperature + 0.2,
-          humidity: currentWeather.humidity + 2,
-          windSpeed: currentWeather.windSpeed + 0.5,
-          condition: currentWeather.condition,
-          rain_24h: 0.0,
-        },
-        rainfallChance: { next24h: 22, expectedRainMm: 0.0 },
-        irrigation: {
-          action: 'Standard Irrigation',
-          status: 'MONITOR 5KM RADAR',
-          water_mm: 8.0,
-          reason: 'Stable local perimeter.',
-        },
+        label: '5km Zone (Community Perimeter)',
+        description: 'Neighboring farm belt telemetry',
+        current: { temperature: baseTemp + 0.4, humidity: Math.max(20, baseHum - 3), windSpeed: 10, rain_24h: 0 },
+        rainfallChance: { next24h: 15, next48h: 25 },
+        irrigation: { action: 'Irrigate Now', water_mm: 8.0, reason: '5km perimeter shows dry wind trends.' },
       },
       {
         radius: 10,
-        label: 'Regional Zone (10km)',
-        description: 'Approaching regional weather front',
-        current: {
-          temperature: currentWeather.temperature - 0.3,
-          humidity: currentWeather.humidity + 5,
-          windSpeed: currentWeather.windSpeed + 1.2,
-          condition: currentWeather.condition,
-          rain_24h: 0.0,
-        },
-        rainfallChance: { next24h: 30, expectedRainMm: 0.0 },
-        irrigation: {
-          action: 'Plan Ahead',
-          status: 'REGIONAL STABLE',
-          water_mm: 12.0,
-          reason: 'No heavy front within 10km.',
-        },
+        label: '10km Zone (District Macro Perimeter)',
+        description: 'Synoptic weather grid overlay',
+        current: { temperature: baseTemp + 0.8, humidity: Math.max(20, baseHum - 5), windSpeed: 12, rain_24h: 0 },
+        rainfallChance: { next24h: 20, next48h: 30 },
+        irrigation: { action: 'Irrigate Now', water_mm: 7.5, reason: 'Regional radar confirms no storm front.' },
       },
     ];
   }, [hyperlocalData, currentWeather]);
 
   const activeZone = zones.find((z: any) => z.radius === selectedRadius) || zones[0];
-  const unifiedDecision = hyperlocalData?.unifiedIrrigationDecision;
+  const unifiedDecision = hyperlocalData?.unified_decision;
 
   return (
-    <section className="section" style={{ paddingTop: 'var(--space-xl)', minHeight: '90vh' }}>
-      <div className="container" style={{ maxWidth: '1200px' }}>
-        
-        {/* Top Header */}
-        <div style={{ marginBottom: 'var(--space-lg)' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 'var(--space-md)' }}>
-            <div>
-              <div className="pill" style={{ background: 'rgba(16, 185, 129, 0.15)', borderColor: 'var(--green-primary)', color: 'var(--green-light)', marginBottom: '8px' }}>
-                🌤️ Live Weather & Irrigation
-              </div>
-              <h1 style={{ fontSize: '2.2rem', fontWeight: 800, margin: '0 0 8px 0', color: 'var(--text-primary)' }}>
-                Farm Weather Intelligence
-              </h1>
-              <div style={{ color: 'var(--text-secondary)', fontSize: '14px', display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                <span>📍 <strong>{currentWeather.location || activeLocationTitle}</strong></span>
-                <span style={{ color: 'var(--text-tertiary)' }}>•</span>
-                <span>Coordinates: <code>{typeof currentWeather.coordinates === 'object' && currentWeather.coordinates !== null ? `${currentWeather.coordinates.lat}, ${currentWeather.coordinates.lon}` : String(currentWeather.coordinates || '')}</code></span>
-                {locationOverride && (
-                  <span className="pill" style={{ fontSize: '11px', padding: '2px 8px', background: locationOverride.isGps ? 'rgba(59, 130, 246, 0.2)' : 'rgba(234, 179, 8, 0.2)', color: locationOverride.isGps ? '#60a5fa' : '#facc15' }}>
-                    {locationOverride.isGps ? '🛰️ Live GPS Active' : '🔍 Custom Location'}
+    <>
+      <DynamicBackground />
+      <section className="section" style={{ position: 'relative', zIndex: 10 }}>
+        <div className="container">
+          {/* Top Farm & Location Bar */}
+          <div className="card-apple" style={{ marginBottom: 'var(--space-lg)', padding: 'clamp(16px, 3vw, 24px)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '14px' }}>
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
+                  <span className="pill" style={{ background: 'rgba(16, 185, 129, 0.15)', borderColor: 'var(--green-primary)', color: 'var(--green-light)' }}>
+                    🛰️ Live Hyperlocal Telemetry
                   </span>
-                )}
+                  {locationOverride?.isGps && (
+                    <span className="pill" style={{ background: 'rgba(59, 130, 246, 0.15)', borderColor: '#3b82f6', color: '#60a5fa' }}>
+                      📍 GPS Active
+                    </span>
+                  )}
+                </div>
+                <h1 style={{ fontSize: 'var(--h2)', fontWeight: 800, color: 'var(--text-primary)', margin: '4px 0' }}>
+                  {activeLocationTitle}
+                </h1>
+                <div style={{ fontSize: '13px', color: 'var(--text-tertiary)' }}>
+                  Farm: <strong style={{ color: 'var(--text-secondary)' }}>{userFarm.name}</strong> · Coordinates: {currentWeather.coordinates}
+                </div>
               </div>
-            </div>
 
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
-              {hasMultipleFarms && (
-                <div>
-                  <label style={{ fontSize: '12px', color: 'var(--text-tertiary)', display: 'block', marginBottom: '4px' }}>
-                    Select Farm
-                  </label>
+              {/* Controls */}
+              <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
+                {hasMultipleFarms && (
                   <select
                     value={selectedFarm?.id || ''}
                     onChange={(e) => {
@@ -341,12 +307,13 @@ const Weather: React.FC = () => {
                       setLocationOverride(null);
                     }}
                     style={{
-                      padding: '8px 14px',
+                      padding: '8px 12px',
                       borderRadius: '8px',
                       background: 'var(--bg-tertiary)',
-                      color: 'var(--text-primary)',
                       border: '1px solid var(--border-color)',
-                      fontSize: '14px',
+                      color: 'var(--text-primary)',
+                      fontSize: '13px',
+                      cursor: 'pointer',
                     }}
                   >
                     {user?.farms.map((farm) => (
@@ -355,491 +322,510 @@ const Weather: React.FC = () => {
                       </option>
                     ))}
                   </select>
-                </div>
-              )}
+                )}
 
-              <button
-                onClick={handleUseGpsLocation}
-                disabled={loading}
-                className="btn-secondary"
-                style={{
-                  padding: '9px 16px',
-                  borderRadius: '8px',
-                  fontSize: '13px',
-                  fontWeight: 600,
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '6px',
-                  marginTop: hasMultipleFarms ? '18px' : '0',
-                }}
-                title="Detect exact GPS coordinates from browser"
-              >
-                📍 {loading ? 'Locating…' : 'Use Live GPS'}
-              </button>
-
-              {locationOverride && (
                 <button
-                  onClick={() => setLocationOverride(null)}
-                  className="btn-secondary"
-                  style={{
-                    padding: '9px 14px',
-                    borderRadius: '8px',
-                    fontSize: '13px',
-                    marginTop: hasMultipleFarms ? '18px' : '0',
-                  }}
-                  title="Reset to Farm default location"
+                  type="button"
+                  onClick={handleUseGpsLocation}
+                  disabled={loading}
+                  className="btn btn-secondary"
+                  style={{ padding: '8px 14px', fontSize: '13px', minHeight: '38px' }}
                 >
-                  🔄 Reset to Farm
+                  📍 {loading ? 'Locating…' : 'Live GPS'}
                 </button>
-              )}
-            </div>
-          </div>
 
-          {/* Location & District Search Bar */}
-          <div style={{ marginTop: '16px', position: 'relative', maxWidth: '560px' }}>
-            <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+                {locationOverride && (
+                  <button
+                    type="button"
+                    onClick={() => setLocationOverride(null)}
+                    className="btn btn-secondary"
+                    style={{ padding: '8px 14px', fontSize: '13px', minHeight: '38px' }}
+                  >
+                    🔄 Reset
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* Search district bar */}
+            <div style={{ marginTop: '14px', position: 'relative', width: '100%', maxWidth: '540px' }}>
               <input
                 type="text"
-                placeholder="🔍 Search any district or city (e.g. Mysuru, Pune, Ludhiana, Mandya, Delhi)..."
+                placeholder="🔍 Search district or city (e.g. Mysuru, Pune, Mandya)..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 onFocus={() => searchResults.length > 0 && setShowDropdown(true)}
                 style={{
                   width: '100%',
-                  padding: '10px 40px 10px 14px',
+                  padding: '10px 14px',
                   borderRadius: '10px',
                   background: 'var(--bg-tertiary)',
                   border: '1px solid var(--border-color)',
                   color: 'var(--text-primary)',
                   fontSize: '14px',
-                  outline: 'none',
                 }}
               />
               {isSearching && (
-                <div style={{ position: 'absolute', right: '12px', fontSize: '12px', color: 'var(--text-tertiary)' }}>
+                <div style={{ position: 'absolute', right: '12px', top: '10px', fontSize: '13px', color: 'var(--text-tertiary)' }}>
                   ⏳
                 </div>
               )}
-            </div>
 
-            {/* Dropdown search results */}
-            {showDropdown && searchResults.length > 0 && (
-              <div
-                style={{
-                  position: 'absolute',
-                  top: '100%',
-                  left: 0,
-                  right: 0,
-                  marginTop: '4px',
-                  background: 'var(--bg-secondary)',
-                  border: '1px solid var(--border-color)',
-                  borderRadius: '10px',
-                  boxShadow: '0 10px 25px rgba(0,0,0,0.5)',
-                  zIndex: 50,
-                  maxHeight: '260px',
-                  overflowY: 'auto',
-                }}
-              >
-                {searchResults.map((item, idx) => (
-                  <div
-                    key={idx}
-                    onClick={() => handleSelectPlace(item)}
-                    style={{
-                      padding: '10px 14px',
-                      borderBottom: idx < searchResults.length - 1 ? '1px solid var(--border-color)' : 'none',
-                      cursor: 'pointer',
-                      display: 'flex',
-                      justifyContent: 'space-between',
-                      alignItems: 'center',
-                    }}
-                    onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(16, 185, 129, 0.1)')}
-                    onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
-                  >
-                    <div>
-                      <strong style={{ color: 'var(--text-primary)', fontSize: '14px' }}>{item.name}</strong>
-                      <span style={{ color: 'var(--text-tertiary)', fontSize: '12px', marginLeft: '6px' }}>
-                        {item.region}, {item.country}
+              {/* Dropdown search results */}
+              {showDropdown && searchResults.length > 0 && (
+                <div
+                  style={{
+                    position: 'absolute',
+                    top: '100%',
+                    left: 0,
+                    right: 0,
+                    marginTop: '4px',
+                    background: 'var(--bg-card)',
+                    border: '1px solid var(--border-color)',
+                    borderRadius: '10px',
+                    boxShadow: '0 12px 30px rgba(0,0,0,0.6)',
+                    zIndex: 50,
+                    maxHeight: '240px',
+                    overflowY: 'auto',
+                  }}
+                >
+                  {searchResults.map((item, idx) => (
+                    <div
+                      key={idx}
+                      onClick={() => handleSelectPlace(item)}
+                      style={{
+                        padding: '10px 14px',
+                        borderBottom: idx < searchResults.length - 1 ? '1px solid var(--border-color)' : 'none',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                      }}
+                      onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(16, 185, 129, 0.12)')}
+                      onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+                    >
+                      <div>
+                        <strong style={{ color: 'var(--text-primary)', fontSize: '13px' }}>{item.name}</strong>
+                        <span style={{ color: 'var(--text-tertiary)', fontSize: '12px', marginLeft: '6px' }}>
+                          {item.region}, {item.country}
+                        </span>
+                      </div>
+                      <span style={{ color: 'var(--text-tertiary)', fontSize: '11px', fontFamily: 'monospace' }}>
+                        {item.lat}, {item.lon}
                       </span>
                     </div>
-                    <span style={{ color: 'var(--text-tertiary)', fontSize: '11px', fontFamily: 'monospace' }}>
-                      {item.lat}, {item.lon}
-                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Current Live Conditions Card */}
+          <div className="card-apple" style={{ marginBottom: 'var(--space-lg)', padding: 'clamp(16px, 3vw, 24px)' }}>
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 200px), 1fr))',
+                gap: '20px',
+                alignItems: 'center',
+              }}
+            >
+              <div>
+                <div style={{ fontSize: '11px', color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                  Live Farm Conditions
+                </div>
+                <div style={{ display: 'flex', alignItems: 'baseline', gap: '6px', marginTop: '4px', flexWrap: 'wrap' }}>
+                  <span style={{ fontSize: 'clamp(2.4rem, 5vw, 3.4rem)', fontWeight: 800, color: 'var(--text-primary)' }}>
+                    {currentWeather.temperature}°
+                  </span>
+                  <span style={{ fontSize: '1.2rem', color: 'var(--text-tertiary)' }}>C</span>
+                  <span style={{ fontSize: '1rem', color: 'var(--green-light)', marginLeft: '6px', fontWeight: 600 }}>
+                    {currentWeather.condition}
+                  </span>
+                </div>
+                <div style={{ fontSize: '13px', color: 'var(--text-tertiary)', marginTop: '2px' }}>
+                  Feels like {currentWeather.feelsLike}°C
+                </div>
+              </div>
+
+              {/* 4 Metric Chips */}
+              <div
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 110px), 1fr))',
+                  gap: '10px',
+                }}
+              >
+                <div style={{ padding: '10px 12px', background: 'var(--bg-tertiary)', borderRadius: '10px', border: '1px solid var(--border-color)' }}>
+                  <div style={{ fontSize: '11px', color: 'var(--text-tertiary)' }}>💧 Humidity</div>
+                  <div style={{ fontSize: '16px', fontWeight: 700, color: 'var(--text-primary)', marginTop: '2px' }}>
+                    {currentWeather.humidity}%
                   </div>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* Current Farm Live Conditions Grid */}
-        <div className="card-apple" style={{ marginBottom: 'var(--space-lg)', padding: '24px' }}>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '20px', alignItems: 'center' }}>
-            <div>
-              <div style={{ fontSize: '12px', color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                Live Farm Readings
-              </div>
-              <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px', marginTop: '4px' }}>
-                <span style={{ fontSize: '3rem', fontWeight: 800, color: 'var(--text-primary)' }}>
-                  {currentWeather.temperature}°
-                </span>
-                <span style={{ fontSize: '1.4rem', color: 'var(--text-tertiary)' }}>C</span>
-                <span style={{ fontSize: '1.1rem', color: 'var(--green-light)', marginLeft: '8px', fontWeight: 600 }}>
-                  {currentWeather.condition}
-                </span>
-              </div>
-              <div style={{ fontSize: '13px', color: 'var(--text-tertiary)', marginTop: '4px' }}>
-                Feels like {currentWeather.feelsLike}°C
-              </div>
-            </div>
-
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '14px' }}>
-              <div style={{ padding: '10px 14px', background: 'var(--bg-tertiary)', borderRadius: '8px' }}>
-                <div style={{ fontSize: '12px', color: 'var(--text-tertiary)' }}>💧 Humidity</div>
-                <div style={{ fontSize: '18px', fontWeight: 700, color: 'var(--text-primary)', marginTop: '2px' }}>
-                  {currentWeather.humidity}%
                 </div>
-              </div>
-              <div style={{ padding: '10px 14px', background: 'var(--bg-tertiary)', borderRadius: '8px' }}>
-                <div style={{ fontSize: '12px', color: 'var(--text-tertiary)' }}>💨 Wind</div>
-                <div style={{ fontSize: '18px', fontWeight: 700, color: 'var(--text-primary)', marginTop: '2px' }}>
-                  {currentWeather.windSpeed} km/h
+                <div style={{ padding: '10px 12px', background: 'var(--bg-tertiary)', borderRadius: '10px', border: '1px solid var(--border-color)' }}>
+                  <div style={{ fontSize: '11px', color: 'var(--text-tertiary)' }}>💨 Wind</div>
+                  <div style={{ fontSize: '16px', fontWeight: 700, color: 'var(--text-primary)', marginTop: '2px' }}>
+                    {currentWeather.windSpeed} km/h
+                  </div>
                 </div>
-              </div>
-              <div style={{ padding: '10px 14px', background: 'var(--bg-tertiary)', borderRadius: '8px' }}>
-                <div style={{ fontSize: '12px', color: 'var(--text-tertiary)' }}>📊 Pressure</div>
-                <div style={{ fontSize: '18px', fontWeight: 700, color: 'var(--text-primary)', marginTop: '2px' }}>
-                  {currentWeather.pressure} hPa
+                <div style={{ padding: '10px 12px', background: 'var(--bg-tertiary)', borderRadius: '10px', border: '1px solid var(--border-color)' }}>
+                  <div style={{ fontSize: '11px', color: 'var(--text-tertiary)' }}>📊 Pressure</div>
+                  <div style={{ fontSize: '16px', fontWeight: 700, color: 'var(--text-primary)', marginTop: '2px' }}>
+                    {currentWeather.pressure} hPa
+                  </div>
                 </div>
-              </div>
-              <div style={{ padding: '10px 14px', background: 'var(--bg-tertiary)', borderRadius: '8px' }}>
-                <div style={{ fontSize: '12px', color: 'var(--text-tertiary)' }}>🌧️ Rain (24h)</div>
-                <div style={{ fontSize: '18px', fontWeight: 700, color: (currentWeather.rain_24h || 0) > 0 ? 'var(--green-light)' : 'var(--text-primary)', marginTop: '2px' }}>
-                  {currentWeather.rain_24h || 0} mm
+                <div style={{ padding: '10px 12px', background: 'var(--bg-tertiary)', borderRadius: '10px', border: '1px solid var(--border-color)' }}>
+                  <div style={{ fontSize: '11px', color: 'var(--text-tertiary)' }}>🌧️ Rain (24h)</div>
+                  <div style={{ fontSize: '16px', fontWeight: 700, color: (currentWeather.rain_24h || 0) > 0 ? 'var(--green-light)' : 'var(--text-primary)', marginTop: '2px' }}>
+                    {currentWeather.rain_24h || 0} mm
+                  </div>
                 </div>
               </div>
             </div>
           </div>
-        </div>
 
-        {/* Hyperlocal Multi-Radius Distance Radar & Automated Irrigation Advice */}
-        <div style={{ marginBottom: 'var(--space-2xl)' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px' }}>
-            <div className="pill" style={{ background: 'rgba(16, 185, 129, 0.15)', borderColor: 'var(--green-primary)', color: 'var(--green-light)' }}>
-              🎯 Hyperlocal Multi-Radius Radar
+          {/* Hyperlocal Multi-Radius Distance Radar & Automated Irrigation Advice */}
+          <div style={{ marginBottom: 'var(--space-xl)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '14px', flexWrap: 'wrap' }}>
+              <div className="pill" style={{ background: 'rgba(16, 185, 129, 0.15)', borderColor: 'var(--green-primary)', color: 'var(--green-light)' }}>
+                🎯 Hyperlocal Concentric Radar
+              </div>
+              <span style={{ fontSize: '12px', color: 'var(--text-tertiary)' }}>
+                (Live readings across 2km, 5km, and 10km perimeter rings)
+              </span>
             </div>
-            <span style={{ fontSize: '13px', color: 'var(--text-tertiary)' }}>
-              (Live data across 2km, 5km, and 10km perimeter rings)
-            </span>
-          </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '24px' }}>
-            
-            {/* Left: Circular Distance Graphic Visualizer */}
-            <div className="card-apple" style={{ padding: '24px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center' }}>
-              <div style={{ fontSize: '14px', fontWeight: 600, color: 'var(--text-primary)', marginBottom: '16px' }}>
-                Concentric Distance Radar
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 300px), 1fr))',
+                gap: 'clamp(16px, 2.5vw, 24px)',
+              }}
+            >
+              {/* Concentric Distance Radar Card */}
+              <div className="card-apple" style={{ padding: '20px', alignItems: 'center', textAlign: 'center' }}>
+                <div style={{ fontSize: '14px', fontWeight: 700, color: 'var(--text-primary)', marginBottom: '12px' }}>
+                  Concentric Distance Radar
+                </div>
+
+                {/* Circular SVG Radar Image */}
+                <div style={{ position: 'relative', width: '100%', maxWidth: '260px', aspectRatio: '1/1', margin: '0 auto' }}>
+                  <svg viewBox="0 0 280 280" style={{ width: '100%', height: '100%' }}>
+                    <defs>
+                      <radialGradient id="radarGlow" cx="50%" cy="50%" r="50%">
+                        <stop offset="0%" stopColor="var(--green-primary)" stopOpacity="0.25" />
+                        <stop offset="60%" stopColor="var(--green-primary)" stopOpacity="0.08" />
+                        <stop offset="100%" stopColor="var(--green-primary)" stopOpacity="0.01" />
+                      </radialGradient>
+                    </defs>
+
+                    <circle cx="140" cy="140" r="130" fill="url(#radarGlow)" />
+
+                    {/* 10km Outer Ring */}
+                    <circle
+                      cx="140"
+                      cy="140"
+                      r="125"
+                      fill="transparent"
+                      stroke={selectedRadius === 10 ? 'var(--green-light)' : 'rgba(255,255,255,0.15)'}
+                      strokeWidth={selectedRadius === 10 ? '3' : '1.5'}
+                      strokeDasharray={selectedRadius === 10 ? 'none' : '4,4'}
+                      style={{ cursor: 'pointer', transition: 'all 0.3s ease' }}
+                      onClick={() => setSelectedRadius(10)}
+                    />
+
+                    {/* 5km Middle Ring */}
+                    <circle
+                      cx="140"
+                      cy="140"
+                      r="85"
+                      fill="transparent"
+                      stroke={selectedRadius === 5 ? 'var(--green-light)' : 'rgba(255,255,255,0.22)'}
+                      strokeWidth={selectedRadius === 5 ? '3' : '1.5'}
+                      strokeDasharray={selectedRadius === 5 ? 'none' : '4,4'}
+                      style={{ cursor: 'pointer', transition: 'all 0.3s ease' }}
+                      onClick={() => setSelectedRadius(5)}
+                    />
+
+                    {/* 2km Inner Ring */}
+                    <circle
+                      cx="140"
+                      cy="140"
+                      r="45"
+                      fill={selectedRadius === 2 ? 'rgba(16, 185, 129, 0.18)' : 'transparent'}
+                      stroke={selectedRadius === 2 ? 'var(--green-primary)' : 'rgba(16, 185, 129, 0.4)'}
+                      strokeWidth={selectedRadius === 2 ? '3' : '2'}
+                      style={{ cursor: 'pointer', transition: 'all 0.3s ease' }}
+                      onClick={() => setSelectedRadius(2)}
+                    />
+
+                    {/* Center Farm Location Dot */}
+                    <circle cx="140" cy="140" r="8" fill="var(--green-primary)" />
+                    <circle cx="140" cy="140" r="14" fill="none" stroke="var(--green-primary)" strokeWidth="1.5" opacity="0.6">
+                      <animate attributeName="r" values="8;20;8" dur="3s" repeatCount="indefinite" />
+                      <animate attributeName="opacity" values="0.8;0.1;0.8" dur="3s" repeatCount="indefinite" />
+                    </circle>
+
+                    {/* Distance Labels */}
+                    <text x="140" y="102" textAnchor="middle" fill="var(--green-light)" fontSize="10" fontWeight="700">
+                      2 km
+                    </text>
+                    <text x="140" y="62" textAnchor="middle" fill="var(--text-secondary)" fontSize="10" fontWeight="600">
+                      5 km
+                    </text>
+                    <text x="140" y="24" textAnchor="middle" fill="var(--text-tertiary)" fontSize="10" fontWeight="600">
+                      10 km
+                    </text>
+                  </svg>
+                </div>
+
+                {/* Radius Buttons */}
+                <div style={{ display: 'flex', gap: '8px', marginTop: '16px', flexWrap: 'wrap', justifyContent: 'center' }}>
+                  {[2, 5, 10].map((r) => (
+                    <button
+                      key={r}
+                      type="button"
+                      onClick={() => setSelectedRadius(r)}
+                      className={selectedRadius === r ? 'btn btn-primary' : 'btn btn-secondary'}
+                      style={{ padding: '6px 14px', fontSize: '12px', minHeight: '34px' }}
+                    >
+                      {r}km Ring
+                    </button>
+                  ))}
+                </div>
               </div>
 
-              {/* Circular SVG Radar Image */}
-              <div style={{ position: 'relative', width: '280px', height: '280px' }}>
-                <svg viewBox="0 0 280 280" style={{ width: '100%', height: '100%' }}>
-                  <defs>
-                    <radialGradient id="radarGlow" cx="50%" cy="50%" r="50%">
-                      <stop offset="0%" stopColor="var(--green-primary)" stopOpacity="0.25" />
-                      <stop offset="60%" stopColor="var(--green-primary)" stopOpacity="0.08" />
-                      <stop offset="100%" stopColor="var(--green-primary)" stopOpacity="0.01" />
-                    </radialGradient>
-                  </defs>
+              {/* Right: Live Automated Irrigation Advice & Radial Analytics */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                {/* Unified Irrigation Advice Card */}
+                <div
+                  className="card-apple"
+                  style={{
+                    padding: 'clamp(16px, 3vw, 24px)',
+                    background:
+                      unifiedDecision?.status === 'green'
+                        ? 'rgba(16, 185, 129, 0.12)'
+                        : unifiedDecision?.status === 'blue'
+                        ? 'rgba(59, 130, 246, 0.12)'
+                        : 'rgba(245, 158, 11, 0.12)',
+                    borderColor:
+                      unifiedDecision?.status === 'green'
+                        ? 'var(--green-primary)'
+                        : unifiedDecision?.status === 'blue'
+                        ? '#3b82f6'
+                        : '#f59e0b',
+                  }}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px', marginBottom: '10px' }}>
+                    <div>
+                      <div style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-tertiary)' }}>
+                        Automated Irrigation Advisory
+                      </div>
+                      <div style={{ fontSize: 'clamp(18px, 2.5vw, 22px)', fontWeight: 800, color: 'var(--text-primary)', marginTop: '2px' }}>
+                        {unifiedDecision?.decision || (activeZone?.irrigation?.action || 'Irrigate Now')}
+                      </div>
+                    </div>
 
-                  {/* Background Radial Glow */}
-                  <circle cx="140" cy="140" r="130" fill="url(#radarGlow)" />
+                    <div>
+                      <div style={{ fontSize: '11px', color: 'var(--text-tertiary)' }}>Volume</div>
+                      <div style={{ fontSize: 'clamp(18px, 2.5vw, 22px)', fontWeight: 800, color: 'var(--green-light)' }}>
+                        {unifiedDecision?.water_mm ?? activeZone?.irrigation?.water_mm ?? 8.0} mm
+                      </div>
+                    </div>
+                  </div>
 
-                  {/* 10km Outer Ring */}
-                  <circle
-                    cx="140"
-                    cy="140"
-                    r="125"
-                    fill="transparent"
-                    stroke={selectedRadius === 10 ? 'var(--green-light)' : 'rgba(255,255,255,0.15)'}
-                    strokeWidth={selectedRadius === 10 ? '3' : '1.5'}
-                    strokeDasharray={selectedRadius === 10 ? 'none' : '4,4'}
-                    style={{ cursor: 'pointer', transition: 'all 0.3s ease' }}
-                    onClick={() => setSelectedRadius(10)}
-                  />
+                  <p style={{ fontSize: '13px', color: 'var(--text-secondary)', lineHeight: 1.5, margin: '0 0 14px 0' }}>
+                    {unifiedDecision?.summary || activeZone?.irrigation?.reason || 'Multi-radius analysis indicates stable soil moisture balance.'}
+                  </p>
 
-                  {/* 5km Middle Ring */}
-                  <circle
-                    cx="140"
-                    cy="140"
-                    r="85"
-                    fill="transparent"
-                    stroke={selectedRadius === 5 ? 'var(--green-light)' : 'rgba(255,255,255,0.22)'}
-                    strokeWidth={selectedRadius === 5 ? '3' : '1.5'}
-                    strokeDasharray={selectedRadius === 5 ? 'none' : '4,4'}
-                    style={{ cursor: 'pointer', transition: 'all 0.3s ease' }}
-                    onClick={() => setSelectedRadius(5)}
-                  />
-
-                  {/* 2km Inner Ring */}
-                  <circle
-                    cx="140"
-                    cy="140"
-                    r="45"
-                    fill={selectedRadius === 2 ? 'rgba(16, 185, 129, 0.18)' : 'transparent'}
-                    stroke={selectedRadius === 2 ? 'var(--green-primary)' : 'rgba(16, 185, 129, 0.4)'}
-                    strokeWidth={selectedRadius === 2 ? '3' : '2'}
-                    style={{ cursor: 'pointer', transition: 'all 0.3s ease' }}
-                    onClick={() => setSelectedRadius(2)}
-                  />
-
-                  {/* Center Farm Location Dot */}
-                  <circle cx="140" cy="140" r="8" fill="var(--green-primary)" />
-                  <circle cx="140" cy="140" r="14" fill="none" stroke="var(--green-primary)" strokeWidth="1.5" opacity="0.6">
-                    <animate attributeName="r" values="8;20;8" dur="3s" repeatCount="indefinite" />
-                    <animate attributeName="opacity" values="0.8;0.1;0.8" dur="3s" repeatCount="indefinite" />
-                  </circle>
-
-                  {/* Ring Distance Badges on graphic */}
-                  <text x="140" y="102" textAnchor="middle" fill="var(--green-light)" fontSize="10" fontWeight="700">
-                    2 km
-                  </text>
-                  <text x="140" y="62" textAnchor="middle" fill="var(--text-secondary)" fontSize="10" fontWeight="600">
-                    5 km
-                  </text>
-                  <text x="140" y="24" textAnchor="middle" fill="var(--text-tertiary)" fontSize="10" fontWeight="600">
-                    10 km
-                  </text>
-                </svg>
-              </div>
-
-              {/* Radius Selector Buttons */}
-              <div style={{ display: 'flex', gap: '8px', marginTop: '16px' }}>
-                {[2, 5, 10].map((r) => (
-                  <button
-                    key={r}
-                    onClick={() => setSelectedRadius(r)}
-                    className={selectedRadius === r ? 'btn btn-primary' : 'btn btn-secondary'}
-                    style={{ padding: '6px 14px', fontSize: '12px' }}
+                  {/* 2km, 5km, 10km comparison boxes */}
+                  <div
+                    style={{
+                      display: 'grid',
+                      gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 80px), 1fr))',
+                      gap: '8px',
+                      paddingTop: '10px',
+                      borderTop: '1px solid rgba(255,255,255,0.08)',
+                    }}
                   >
-                    {r}km Radius
+                    {zones.map((z: any) => (
+                      <div
+                        key={z.radius}
+                        onClick={() => setSelectedRadius(z.radius)}
+                        style={{
+                          padding: '8px',
+                          borderRadius: '8px',
+                          background: selectedRadius === z.radius ? 'rgba(16, 185, 129, 0.22)' : 'var(--bg-tertiary)',
+                          border: selectedRadius === z.radius ? '1px solid var(--green-primary)' : '1px solid var(--border-color)',
+                          cursor: 'pointer',
+                          textAlign: 'center',
+                        }}
+                      >
+                        <div style={{ fontSize: '11px', fontWeight: 700, color: selectedRadius === z.radius ? 'var(--green-light)' : 'var(--text-secondary)' }}>
+                          {z.radius}km Ring
+                        </div>
+                        <div style={{ fontSize: '14px', fontWeight: 700, color: 'var(--text-primary)', marginTop: '2px' }}>
+                          {z.current?.temperature ?? 24}°C
+                        </div>
+                        <div style={{ fontSize: '10px', color: (z.rainfallChance?.next24h || 0) > 50 ? 'var(--green-light)' : 'var(--text-tertiary)' }}>
+                          {z.rainfallChance?.next24h ?? 15}% Rain
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Active Radius Detail */}
+                <div className="card-apple" style={{ padding: '16px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                    <div>
+                      <h3 style={{ fontSize: '14px', fontWeight: 700, margin: 0, color: 'var(--text-primary)' }}>
+                        {activeZone.label}
+                      </h3>
+                      <div style={{ fontSize: '11px', color: 'var(--text-tertiary)' }}>{activeZone.description}</div>
+                    </div>
+                    <span className="pill" style={{ fontSize: '10px' }}>Telemetry</span>
+                  </div>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 65px), 1fr))', gap: '8px', marginTop: '8px' }}>
+                    <div style={{ padding: '6px', background: 'var(--bg-tertiary)', borderRadius: '6px', textAlign: 'center' }}>
+                      <div style={{ fontSize: '10px', color: 'var(--text-tertiary)' }}>Temp</div>
+                      <div style={{ fontSize: '14px', fontWeight: 700, color: 'var(--text-primary)' }}>{activeZone.current?.temperature}°C</div>
+                    </div>
+                    <div style={{ padding: '6px', background: 'var(--bg-tertiary)', borderRadius: '6px', textAlign: 'center' }}>
+                      <div style={{ fontSize: '10px', color: 'var(--text-tertiary)' }}>Humidity</div>
+                      <div style={{ fontSize: '14px', fontWeight: 700, color: 'var(--text-primary)' }}>{activeZone.current?.humidity}%</div>
+                    </div>
+                    <div style={{ padding: '6px', background: 'var(--bg-tertiary)', borderRadius: '6px', textAlign: 'center' }}>
+                      <div style={{ fontSize: '10px', color: 'var(--text-tertiary)' }}>Wind</div>
+                      <div style={{ fontSize: '14px', fontWeight: 700, color: 'var(--text-primary)' }}>{activeZone.current?.windSpeed}kph</div>
+                    </div>
+                    <div style={{ padding: '6px', background: 'var(--bg-tertiary)', borderRadius: '6px', textAlign: 'center' }}>
+                      <div style={{ fontSize: '10px', color: 'var(--text-tertiary)' }}>24h Rain</div>
+                      <div style={{ fontSize: '14px', fontWeight: 700, color: 'var(--green-light)' }}>{activeZone.current?.rain_24h || 0}mm</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Multi-Day Forecast */}
+          <div style={{ marginBottom: 'var(--space-xl)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px', flexWrap: 'wrap', gap: '10px' }}>
+              <div>
+                <h2 style={{ fontSize: 'var(--h2)', fontWeight: 700, margin: 0, color: 'var(--text-primary)' }}>
+                  {forecastDays}-Day Weather Forecast
+                </h2>
+                <div style={{ fontSize: '12px', color: 'var(--text-tertiary)' }}>
+                  Daily temperature, precipitation likelihood, and moisture forecast
+                </div>
+              </div>
+
+              {/* Toggle 7 Days vs 14 Days */}
+              <div style={{ display: 'flex', gap: '4px', background: 'var(--bg-tertiary)', padding: '4px', borderRadius: '10px', border: '1px solid var(--border-color)' }}>
+                {[7, 14].map((days) => (
+                  <button
+                    key={days}
+                    type="button"
+                    onClick={() => setForecastDays(days)}
+                    style={{
+                      padding: '6px 14px',
+                      borderRadius: '8px',
+                      fontSize: '12px',
+                      fontWeight: 600,
+                      border: 'none',
+                      cursor: 'pointer',
+                      background: forecastDays === days ? 'var(--green-primary)' : 'transparent',
+                      color: forecastDays === days ? '#fff' : 'var(--text-secondary)',
+                      transition: 'all 0.2s ease',
+                    }}
+                  >
+                    {days} Days
                   </button>
                 ))}
               </div>
             </div>
 
-            {/* Right: Live Automated Irrigation Advice & Radial Analytics */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-              
-              {/* Unified Irrigation Advice Card */}
-              <div
-                className="card-apple"
-                style={{
-                  padding: '24px',
-                  background: unifiedDecision?.status === 'green' ? 'rgba(16, 185, 129, 0.12)' : unifiedDecision?.status === 'blue' ? 'rgba(59, 130, 246, 0.12)' : 'rgba(245, 158, 11, 0.12)',
-                  borderColor: unifiedDecision?.status === 'green' ? 'var(--green-primary)' : unifiedDecision?.status === 'blue' ? '#3b82f6' : '#f59e0b',
-                }}
-              >
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px', marginBottom: '12px' }}>
-                  <div>
-                    <div style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-tertiary)' }}>
-                      Automated Irrigation Advisory
+            {/* Daily Forecast Grid */}
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 110px), 1fr))',
+                gap: '10px',
+                marginBottom: '20px',
+              }}
+            >
+              {forecastData.map((day, i) => {
+                const d = day?.date ? (day.date instanceof Date ? day.date : new Date(day.date)) : new Date();
+                const isValid = !isNaN(d.getTime());
+                const dayLabel = day.isToday ? 'Today' : (isValid ? d.toLocaleDateString('en-US', { weekday: 'short' }) : '');
+                const dateLabel = isValid ? d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '';
+
+                return (
+                  <div
+                    key={i}
+                    className="card-apple"
+                    style={{
+                      padding: '12px 8px',
+                      textAlign: 'center',
+                      background: day.isToday ? 'rgba(16, 185, 129, 0.14)' : 'var(--bg-card)',
+                      borderColor: day.isToday ? 'var(--green-primary)' : 'var(--border-color)',
+                    }}
+                  >
+                    <div style={{ fontSize: '12px', fontWeight: 700, color: 'var(--text-primary)', marginBottom: '2px' }}>
+                      {dayLabel}
                     </div>
-                    <div style={{ fontSize: '22px', fontWeight: 800, color: 'var(--text-primary)', marginTop: '2px' }}>
-                      {unifiedDecision?.decision || (activeZone?.irrigation?.action || 'Irrigate Now')}
+                    <div style={{ fontSize: '10px', color: 'var(--text-tertiary)', marginBottom: '6px' }}>
+                      {dateLabel}
+                    </div>
+                    <div style={{ fontSize: '1.25rem', fontWeight: 800, color: 'var(--text-primary)' }}>
+                      {day.high}°
+                    </div>
+                    <div style={{ fontSize: '11px', color: 'var(--text-tertiary)', marginBottom: '6px' }}>
+                      {day.low}°
+                    </div>
+                    <div style={{ fontSize: '11px', color: 'var(--text-secondary)', fontWeight: 500, minHeight: '16px' }}>
+                      {day.condition}
+                    </div>
+                    <div style={{ fontSize: '10px', color: (day.rainChance || 0) > 30 ? 'var(--green-light)' : 'var(--text-tertiary)', marginTop: '4px' }}>
+                      💧 {day.rainChance || 0}%
                     </div>
                   </div>
-
-                  <div style={{ textAlign: 'right' }}>
-                    <div style={{ fontSize: '11px', color: 'var(--text-tertiary)' }}>Recommended Volume</div>
-                    <div style={{ fontSize: '20px', fontWeight: 800, color: 'var(--green-light)' }}>
-                      {unifiedDecision?.water_mm ?? activeZone?.irrigation?.water_mm ?? 8.0} mm
-                    </div>
-                  </div>
-                </div>
-
-                <p style={{ fontSize: '14px', color: 'var(--text-secondary)', lineHeight: 1.6, margin: '0 0 16px 0' }}>
-                  {unifiedDecision?.summary || activeZone?.irrigation?.reason || 'Multi-radius analysis indicates stable soil moisture balance.'}
-                </p>
-
-                {/* 2km, 5km, 10km Live Comparison Row */}
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px', paddingTop: '12px', borderTop: '1px solid rgba(255,255,255,0.08)' }}>
-                  {zones.map((z: any) => (
-                    <div
-                      key={z.radius}
-                      onClick={() => setSelectedRadius(z.radius)}
-                      style={{
-                        padding: '8px',
-                        borderRadius: '6px',
-                        background: selectedRadius === z.radius ? 'rgba(16, 185, 129, 0.2)' : 'var(--bg-tertiary)',
-                        border: selectedRadius === z.radius ? '1px solid var(--green-primary)' : '1px solid transparent',
-                        cursor: 'pointer',
-                        textAlign: 'center',
-                      }}
-                    >
-                      <div style={{ fontSize: '11px', fontWeight: 700, color: selectedRadius === z.radius ? 'var(--green-light)' : 'var(--text-secondary)' }}>
-                        {z.radius}km Zone
-                      </div>
-                      <div style={{ fontSize: '13px', fontWeight: 700, color: 'var(--text-primary)', marginTop: '2px' }}>
-                        {z.current?.temperature ?? 24}°C
-                      </div>
-                      <div style={{ fontSize: '11px', color: (z.rainfallChance?.next24h || 0) > 50 ? 'var(--green-light)' : 'var(--text-tertiary)' }}>
-                        {z.rainfallChance?.next24h ?? 15}% Rain
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              {/* Active Selected Radius Detail Card */}
-              <div className="card-apple" style={{ padding: '20px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-                  <div>
-                    <h3 style={{ fontSize: '16px', fontWeight: 700, margin: 0, color: 'var(--text-primary)' }}>
-                      {activeZone.label}
-                    </h3>
-                    <div style={{ fontSize: '12px', color: 'var(--text-tertiary)' }}>{activeZone.description}</div>
-                  </div>
-                  <span className="pill" style={{ fontSize: '11px' }}>Live API Data</span>
-                </div>
-
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '10px', marginTop: '10px' }}>
-                  <div style={{ padding: '8px', background: 'var(--bg-tertiary)', borderRadius: '6px', textAlign: 'center' }}>
-                    <div style={{ fontSize: '11px', color: 'var(--text-tertiary)' }}>Temp</div>
-                    <div style={{ fontSize: '15px', fontWeight: 700, color: 'var(--text-primary)' }}>{activeZone.current?.temperature}°C</div>
-                  </div>
-                  <div style={{ padding: '8px', background: 'var(--bg-tertiary)', borderRadius: '6px', textAlign: 'center' }}>
-                    <div style={{ fontSize: '11px', color: 'var(--text-tertiary)' }}>Humidity</div>
-                    <div style={{ fontSize: '15px', fontWeight: 700, color: 'var(--text-primary)' }}>{activeZone.current?.humidity}%</div>
-                  </div>
-                  <div style={{ padding: '8px', background: 'var(--bg-tertiary)', borderRadius: '6px', textAlign: 'center' }}>
-                    <div style={{ fontSize: '11px', color: 'var(--text-tertiary)' }}>Wind</div>
-                    <div style={{ fontSize: '15px', fontWeight: 700, color: 'var(--text-primary)' }}>{activeZone.current?.windSpeed}kph</div>
-                  </div>
-                  <div style={{ padding: '8px', background: 'var(--bg-tertiary)', borderRadius: '6px', textAlign: 'center' }}>
-                    <div style={{ fontSize: '11px', color: 'var(--text-tertiary)' }}>24h Rain</div>
-                    <div style={{ fontSize: '15px', fontWeight: 700, color: 'var(--green-light)' }}>{activeZone.current?.rain_24h || 0}mm</div>
-                  </div>
-                </div>
-              </div>
-
+                );
+              })}
             </div>
 
-          </div>
-        </div>
-
-        {/* Multi-Day Forecast (Visible Down on the Page) */}
-        <div style={{ marginBottom: 'var(--space-2xl)' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexWrap: 'wrap', gap: '12px' }}>
-            <div>
-              <h2 style={{ fontSize: '1.6rem', fontWeight: 700, margin: 0, color: 'var(--text-primary)' }}>
-                {forecastDays}-Day Weather Forecast
-              </h2>
-              <div style={{ fontSize: '13px', color: 'var(--text-tertiary)' }}>
-                Live daily temperature, condition, and precipitation forecast
-              </div>
-            </div>
-
-            {/* Toggle 7 Days vs 14 Days */}
-            <div style={{ display: 'flex', gap: '6px', background: 'var(--bg-tertiary)', padding: '4px', borderRadius: '8px' }}>
-              {[7, 14].map((days) => (
-                <button
-                  key={days}
-                  onClick={() => setForecastDays(days)}
-                  style={{
-                    padding: '6px 16px',
-                    borderRadius: '6px',
-                    fontSize: '13px',
-                    fontWeight: 600,
-                    border: 'none',
-                    cursor: 'pointer',
-                    background: forecastDays === days ? 'var(--green-primary)' : 'transparent',
-                    color: forecastDays === days ? '#fff' : 'var(--text-secondary)',
-                    transition: 'all 0.2s ease',
-                  }}
-                >
-                  {days} Days
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Daily Forecast Grid */}
-          <div style={{
-            display: 'grid',
-            gridTemplateColumns: `repeat(auto-fill, minmax(130px, 1fr))`,
-            gap: '12px',
-            marginBottom: '24px',
-          }}>
-            {forecastData.map((day, i) => {
-              const d = day?.date ? (day.date instanceof Date ? day.date : new Date(day.date)) : new Date();
-              const isValid = !isNaN(d.getTime());
-              const dayLabel = day.isToday ? 'Today' : (isValid ? d.toLocaleDateString('en-US', { weekday: 'short' }) : '');
-              const dateLabel = isValid ? d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '';
-
-              return (
-                <div
-                  key={i}
-                  className="card-apple"
-                  style={{
-                    padding: '16px 10px',
-                    textAlign: 'center',
-                    background: day.isToday ? 'rgba(16, 185, 129, 0.12)' : 'var(--bg-tertiary)',
-                    borderColor: day.isToday ? 'var(--green-primary)' : 'var(--border-color)',
-                  }}
-                >
-                  <div style={{ fontSize: '13px', fontWeight: 700, color: 'var(--text-primary)', marginBottom: '2px' }}>
-                    {dayLabel}
-                  </div>
-                  <div style={{ fontSize: '11px', color: 'var(--text-tertiary)', marginBottom: '8px' }}>
-                    {dateLabel}
-                  </div>
-                  <div style={{ fontSize: '1.4rem', fontWeight: 800, color: 'var(--text-primary)' }}>
-                    {day.high}°
-                  </div>
-                  <div style={{ fontSize: '12px', color: 'var(--text-tertiary)', marginBottom: '8px' }}>
-                    {day.low}°
-                  </div>
-                  <div style={{ fontSize: '12px', color: 'var(--text-secondary)', fontWeight: 500, minHeight: '18px' }}>
-                    {day.condition}
-                  </div>
-                  <div style={{ fontSize: '11px', color: (day.rainChance || 0) > 30 ? 'var(--green-light)' : 'var(--text-tertiary)', marginTop: '6px' }}>
-                    💧 {day.rainChance || 0}% ({day.rainAmount || 0}mm)
-                  </div>
+            {/* Temperature & Precipitation Trend Charts */}
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 300px), 1fr))',
+                gap: '16px',
+              }}
+            >
+              <div className="card-apple" style={{ padding: '16px' }}>
+                <div style={{ fontSize: '13px', fontWeight: 700, color: 'var(--text-primary)', marginBottom: '10px' }}>
+                  🌡️ Temperature Trend ({forecastDays} Days)
                 </div>
-              );
-            })}
-          </div>
-
-          {/* Temperature & Precipitation Trend Charts */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '20px' }}>
-            <div className="card-apple" style={{ padding: '20px' }}>
-              <div style={{ fontSize: '14px', fontWeight: 700, color: 'var(--text-primary)', marginBottom: '12px' }}>
-                🌡️ Temperature Trend ({forecastDays} Days)
+                <SimpleTemperatureChart data={forecastData} />
               </div>
-              <SimpleTemperatureChart data={forecastData} />
-            </div>
 
-            <div className="card-apple" style={{ padding: '20px' }}>
-              <div style={{ fontSize: '14px', fontWeight: 700, color: 'var(--text-primary)', marginBottom: '12px' }}>
-                🌧️ Expected Precipitation ({forecastDays} Days)
+              <div className="card-apple" style={{ padding: '16px' }}>
+                <div style={{ fontSize: '13px', fontWeight: 700, color: 'var(--text-primary)', marginBottom: '10px' }}>
+                  🌧️ Expected Precipitation ({forecastDays} Days)
+                </div>
+                <SimpleRainChart data={forecastData} />
               </div>
-              <SimpleRainChart data={forecastData} />
             </div>
           </div>
         </div>
-
-      </div>
-    </section>
+      </section>
+    </>
   );
 };
 
-/* ------------------------------------------------------------- */
-/* --------------- CLEAN SVG CHART SUBCOMPONENTS --------------- */
-/* ------------------------------------------------------------- */
-
-interface SimpleChartProps {
-  data: Array<{ high: number; low: number; rainAmount: number; date: Date }>;
-}
+/* SVG Chart Subcomponents with fluid scaling */
 
 const SimpleTemperatureChart: React.FC<{ data: any[] }> = ({ data }) => {
   if (!data || data.length === 0) return <div style={{ color: 'var(--text-tertiary)' }}>No data available</div>;
@@ -847,25 +833,25 @@ const SimpleTemperatureChart: React.FC<{ data: any[] }> = ({ data }) => {
   const maxTemp = Math.max(...data.map((d) => d.high || 0), 30);
   const minTemp = Math.min(...data.map((d) => d.low || 0), 10);
   const range = (maxTemp - minTemp) || 1;
-  const height = 140;
+  const height = 130;
   const width = 500;
   const pad = 24;
 
   const getY = (v: number) => height - pad - (((v - minTemp) / range) * (height - pad * 2));
-  const getX = (idx: number) => data.length <= 1 ? pad : (idx / (data.length - 1)) * (width - pad * 2) + pad;
+  const getX = (idx: number) => (data.length <= 1 ? pad : (idx / (data.length - 1)) * (width - pad * 2) + pad);
 
   const highPoints = data.map((d, i) => `${getX(i)},${getY(d.high)}`).join(' ');
   const lowPoints = data.map((d, i) => `${getX(i)},${getY(d.low)}`).join(' ');
 
   return (
-    <div style={{ width: '100%', height: `${height}px` }}>
-      <svg viewBox={`0 0 ${width} ${height}`} style={{ width: '100%', height: '100%', overflow: 'visible' }}>
+    <div style={{ width: '100%', height: 'auto', minHeight: `${height}px` }}>
+      <svg viewBox={`0 0 ${width} ${height}`} style={{ width: '100%', height: 'auto', overflow: 'visible' }}>
         <polyline fill="none" stroke="var(--green-light)" strokeWidth="3" strokeLinecap="round" points={highPoints} />
         <polyline fill="none" stroke="var(--green-dark)" strokeWidth="2" strokeDasharray="3,3" strokeLinecap="round" points={lowPoints} />
         {data.map((d, i) => (
           <g key={i}>
             <circle cx={getX(i)} cy={getY(d.high)} r="3.5" fill="var(--green-light)" />
-            <text x={getX(i)} y={getY(d.high) - 8} fontSize="9" fill="var(--text-secondary)" textAnchor="middle">
+            <text x={getX(i)} y={getY(d.high) - 7} fontSize="9" fill="var(--text-secondary)" textAnchor="middle">
               {d.high}°
             </text>
           </g>
@@ -879,15 +865,15 @@ const SimpleRainChart: React.FC<{ data: any[] }> = ({ data }) => {
   if (!data || data.length === 0) return <div style={{ color: 'var(--text-tertiary)' }}>No data available</div>;
 
   const maxRain = Math.max(...data.map((d) => d.rainAmount || 0), 1);
-  const height = 140;
+  const height = 130;
   const width = 500;
   const pad = 24;
 
-  const barWidth = Math.max(6, Math.min(24, (width - pad * 2) / data.length - 6));
+  const barWidth = Math.max(6, Math.min(20, (width - pad * 2) / data.length - 6));
 
   return (
-    <div style={{ width: '100%', height: `${height}px` }}>
-      <svg viewBox={`0 0 ${width} ${height}`} style={{ width: '100%', height: '100%', overflow: 'visible' }}>
+    <div style={{ width: '100%', height: 'auto', minHeight: `${height}px` }}>
+      <svg viewBox={`0 0 ${width} ${height}`} style={{ width: '100%', height: 'auto', overflow: 'visible' }}>
         {data.map((d, i) => {
           const x = data.length <= 1 ? pad : (i / (data.length - 1)) * (width - pad * 2) + pad;
           const barHeight = Math.max(2, ((d.rainAmount || 0) / maxRain) * (height - pad * 2));

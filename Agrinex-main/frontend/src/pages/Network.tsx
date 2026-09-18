@@ -457,7 +457,7 @@ const Network: React.FC = () => {
                 </div>
               </div>
             ) : (
-              <div style={{ position: 'relative', width: '60%', margin: '0 auto', aspectRatio: '3 / 2', background: 'linear-gradient(90deg, var(--bg-tertiary) 0%, var(--bg-tertiary) 80%, rgba(16,185,129,0.06) 100%), repeating-linear-gradient(0deg, transparent 0px, transparent 20px, rgba(16,185,129,0.05) 20px, rgba(16,185,129,0.05) 22px)', borderRadius: 'var(--space-xs)', overflow: 'hidden', border: '2px solid var(--border-color)', animation: 'fieldSway 12s linear infinite' }}>
+              <div style={{ position: 'relative', width: '100%', maxWidth: '720px', margin: '0 auto', aspectRatio: '3 / 2', background: 'linear-gradient(90deg, var(--bg-tertiary) 0%, var(--bg-tertiary) 80%, rgba(16,185,129,0.06) 100%), repeating-linear-gradient(0deg, transparent 0px, transparent 20px, rgba(16,185,129,0.05) 20px, rgba(16,185,129,0.05) 22px)', borderRadius: 'var(--space-xs)', overflow: 'hidden', border: '2px solid var(--border-color)', animation: 'fieldSway 12s linear infinite' }}>
                 {zones.map((zone, index) => (
                   <ZoneBlock
                     key={zone.id}

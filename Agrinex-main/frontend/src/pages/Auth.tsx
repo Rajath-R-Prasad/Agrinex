@@ -31,7 +31,7 @@ const Auth: React.FC = () => {
       const farm = (formData.get('farm') as string) || `${name}'s Farm`;
       const city = (formData.get('city') as string) || 'Bengaluru';
       const state = 'Karnataka';
-      
+
       const isNewUser = mode === 'signup';
 
       // 1. Capture user geolocation if available
@@ -48,7 +48,6 @@ const Auth: React.FC = () => {
           lon = Number(pos.coords.longitude.toFixed(4));
           coords = `${lat}, ${lon}`;
         } catch {
-          // Default to Bengaluru or city geocode
           coords = '12.9716, 77.5946';
         }
       }
@@ -67,8 +66,8 @@ const Auth: React.FC = () => {
                 state: state,
                 coordinates: coords,
                 farm_name: farm,
-              }
-            }
+              },
+            },
           });
           if (error) throw error;
           if (data.user) userId = data.user.id;
@@ -90,7 +89,7 @@ const Auth: React.FC = () => {
           coordinates: coords,
           area: 5.0,
           soilType: 'Loamy Soil',
-        }
+        },
       ];
 
       // 3. Sync to backend API via POST request
@@ -128,37 +127,69 @@ const Auth: React.FC = () => {
   };
 
   return (
-
     <>
       <DynamicBackground />
-      <section className="section" style={{ paddingTop: 'var(--space-xl)', position: 'relative', zIndex: 50 }}>
-        <div className="container auth-grid" style={{ position: 'relative', zIndex: 51 }}>
+      <section className="section" style={{ position: 'relative', zIndex: 10 }}>
+        <div className="container auth-grid">
+          {/* Hero Explainer Column */}
           <div className="auth-hero card-apple">
-            <div className="pill" style={{ background: 'rgba(16, 185, 129, 0.15)', borderColor: 'var(--green-primary)', color: 'var(--green-light)' }}>
-              🌾 Welcome to Agrinex
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+              <div
+                className="pill"
+                style={{
+                  background: 'rgba(16, 185, 129, 0.15)',
+                  borderColor: 'var(--green-primary)',
+                  color: 'var(--green-light)',
+                }}
+              >
+                🌾 Welcome to Agrinex
+              </div>
             </div>
-            <h1 style={{ fontSize: 'var(--h1)', margin: 'var(--space-sm) 0', color: 'var(--text-primary)' }}>Agriculture Intelligence Platform</h1>
-            <p style={{ fontSize: 'var(--body-lg)', color: 'var(--text-secondary)', lineHeight: 1.6, maxWidth: '520px' }}>
-              <strong style={{ color: 'var(--text-primary)' }}>Built exclusively for agriculture.</strong> Join Agrinex to access AI-powered irrigation recommendations, salinity prediction, soil analytics, micro weather forecasting, and lender-ready credit proof — all designed for modern farming.
+
+            <h1 style={{ fontSize: 'var(--h1)', margin: 'var(--space-xs) 0 var(--space-sm)', color: 'var(--text-primary)' }}>
+              Agriculture Intelligence Platform
+            </h1>
+
+            <p style={{ fontSize: 'var(--body-lg)', color: 'var(--text-secondary)', lineHeight: 1.6, maxWidth: '520px', marginBottom: 'var(--space-md)' }}>
+              <strong style={{ color: 'var(--text-primary)' }}>Built exclusively for agriculture.</strong> Access AI-powered irrigation recommendations, N-P-K soil diagnostic studio, micro weather forecasting, and lender-ready ROI certificates.
             </p>
-            <div style={{ display: 'grid', gap: 'var(--space-sm)', marginTop: 'var(--space-md)' }}>
-              <div className="auth-bullet">🌾 Agriculture-first technology built for farming workflows</div>
-              <div className="auth-bullet">🌐 Multi-farm intelligence with real-time collaboration</div>
-              <div className="auth-bullet">💧 Irrigation decisions with explainability (2km, 5km, 10km radius)</div>
-              <div className="auth-bullet">🌱 NPK soil diagnostics & rule-based crop predictions</div>
-              <div className="auth-bullet">💰 Credit readiness & ROI proof for lenders</div>
+
+            <div style={{ display: 'grid', gap: '10px' }}>
+              <div className="auth-bullet">
+                <span>🌾</span>
+                <span>Agriculture-first technology built for farming workflows</span>
+              </div>
+              <div className="auth-bullet">
+                <span>🛰️</span>
+                <span>Multi-radius concentric radar (2km, 5km, 10km live rings)</span>
+              </div>
+              <div className="auth-bullet">
+                <span>💧</span>
+                <span>Automated irrigation decisions with water volume guidance</span>
+              </div>
+              <div className="auth-bullet">
+                <span>🌱</span>
+                <span>NPK soil diagnostics & machine learning crop rankings</span>
+              </div>
+              <div className="auth-bullet">
+                <span>💰</span>
+                <span>Credit readiness & lender-grade ROI proof packs</span>
+              </div>
             </div>
           </div>
 
+          {/* Form Card Column */}
           <div className="auth-card">
             <div className="auth-toggle">
               <button
+                type="button"
                 className={`auth-tab ${mode === 'login' ? 'active' : ''}`}
                 onClick={() => setMode('login')}
               >
                 Log In
               </button>
               <button
+                type="button"
                 className={`auth-tab ${mode === 'signup' ? 'active' : ''}`}
                 onClick={() => setMode('signup')}
               >
@@ -167,15 +198,17 @@ const Auth: React.FC = () => {
             </div>
 
             {errorMsg && (
-              <div style={{
-                padding: 'var(--space-sm)',
-                borderRadius: 'var(--space-xs)',
-                background: 'rgba(239, 68, 68, 0.15)',
-                border: '1px solid #ef4444',
-                color: '#f87171',
-                fontSize: '13px',
-                marginBottom: 'var(--space-md)'
-              }}>
+              <div
+                style={{
+                  padding: '10px 14px',
+                  borderRadius: '10px',
+                  background: 'rgba(239, 68, 68, 0.15)',
+                  border: '1px solid #ef4444',
+                  color: '#f87171',
+                  fontSize: '13px',
+                  marginBottom: '14px',
+                }}
+              >
                 {errorMsg}
               </div>
             )}
@@ -188,62 +221,66 @@ const Auth: React.FC = () => {
                 </div>
               )}
 
-
-            <div className="form-row">
-              <label htmlFor="email">Email</label>
-              <input id="email" name="email" type="email" placeholder="you@example.com" required />
-            </div>
-
-            <div className="form-row">
-              <label htmlFor="password">Password</label>
-              <input id="password" name="password" type="password" placeholder="••••••••" required />
-            </div>
-
-            {mode === 'signup' && (
-              <>
               <div className="form-row">
-                <label htmlFor="farm">Primary Farm</label>
-                <input id="farm" name="farm" type="text" placeholder="Farm 1 - Rajesh Kumar" />
+                <label htmlFor="email">Email Address</label>
+                <input id="email" name="email" type="email" placeholder="you@example.com" required />
               </div>
+
               <div className="form-row">
-                <label htmlFor="city">City</label>
-                <input id="city" name="city" type="text" placeholder="Your City" required />
+                <label htmlFor="password">Password</label>
+                <input id="password" name="password" type="password" placeholder="••••••••" required />
               </div>
-              </>
-            )}
 
-            <div className="form-row inline">
-              <label className="checkbox">
-                <input type="checkbox" defaultChecked />
-                <span>I agree to the Terms and Privacy Policy</span>
-              </label>
-            </div>
-
-            <button type="submit" className="btn btn-primary" style={{ width: '100%', justifyContent: 'center' }}>
-              {mode === 'login' ? 'Log In' : 'Create Account'}
-            </button>
-
-            <div className="auth-alt">
-              {mode === 'login' ? (
-                <span>
-                  New here?{' '}
-                  <button type="button" className="link-like" onClick={() => setMode('signup')}>
-                    Create an account
-                  </button>
-                </span>
-              ) : (
-                <span>
-                  Already have an account?{' '}
-                  <button type="button" className="link-like" onClick={() => setMode('login')}>
-                    Log in
-                  </button>
-                </span>
+              {mode === 'signup' && (
+                <>
+                  <div className="form-row">
+                    <label htmlFor="farm">Primary Farm Name</label>
+                    <input id="farm" name="farm" type="text" placeholder="North Plot Farm" />
+                  </div>
+                  <div className="form-row">
+                    <label htmlFor="city">City / District</label>
+                    <input id="city" name="city" type="text" placeholder="Bengaluru, Karnataka" required />
+                  </div>
+                </>
               )}
-            </div>
-          </form>
+
+              <div className="form-row inline">
+                <label className="checkbox">
+                  <input type="checkbox" defaultChecked required />
+                  <span>I agree to the Terms of Service & Privacy Policy</span>
+                </label>
+              </div>
+
+              <button
+                type="submit"
+                disabled={loading}
+                className="btn btn-primary"
+                style={{ width: '100%', justifyContent: 'center', marginTop: '6px' }}
+              >
+                {loading ? 'Please wait…' : mode === 'login' ? 'Log In' : 'Create Account'}
+              </button>
+
+              <div className="auth-alt">
+                {mode === 'login' ? (
+                  <span>
+                    New to Agrinex?{' '}
+                    <button type="button" className="link-like" onClick={() => setMode('signup')}>
+                      Create an account
+                    </button>
+                  </span>
+                ) : (
+                  <span>
+                    Already have an account?{' '}
+                    <button type="button" className="link-like" onClick={() => setMode('login')}>
+                      Log in
+                    </button>
+                  </span>
+                )}
+              </div>
+            </form>
+          </div>
         </div>
-      </div>
-    </section>
+      </section>
     </>
   );
 };
